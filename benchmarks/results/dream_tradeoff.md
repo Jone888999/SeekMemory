@@ -167,6 +167,19 @@ Missing behavior episodes: C11_behavior_comfort_missed. Self-impression kinds ex
 5. Add a holdout corpus before tuning on these numbers; do not tune thresholds on the same 40 topics used for the report.
 6. Re-run this harness after every signal, batch or pending-policy change, and keep the `cc814ce` / `d9fc248` comparison in the results directory.
 
+### Generated result policy
+
+| file | role | expected to change |
+|---|---|---|
+| `benchmarks/results/dream_tradeoff.md` | canonical human report; generated, do not hand-edit | derived from the three JSON snapshots |
+| `benchmarks/results/dream_tradeoff.json` | canonical aggregate (comparison + all targets) | rebuilt with the report |
+| `benchmarks/results/dream_tradeoff_cc814ce.json` | historical pre-optimization baseline | immutable; re-record as a new dated file |
+| `benchmarks/results/dream_tradeoff_d9fc248.json` | historical merged implementation | immutable; re-record as a new dated file |
+| `benchmarks/results/dream_tradeoff_current.json` | snapshot of the current checkout | regenerate after relevant changes |
+| `benchmarks/data/dream_tradeoff_corpus.jsonl` | frozen synthetic corpus | change only with a new snapshot set and report |
+
+Regenerate only `dream_tradeoff_current.json` with `python benchmarks/dream_eval.py --repo . --label current --output benchmarks/results/dream_tradeoff_current.json`; then rebuild the aggregate and report from the three snapshots with `python benchmarks/dream_tradeoff.py --input cc814ce=benchmarks/results/dream_tradeoff_cc814ce.json --input d9fc248=benchmarks/results/dream_tradeoff_d9fc248.json --input current=benchmarks/results/dream_tradeoff_current.json --baseline cc814ce --target-label d9fc248 --output-json benchmarks/results/dream_tradeoff.json --output-md benchmarks/results/dream_tradeoff.md`. Do not regenerate `cc814ce`/`d9fc248` in place. Detailed policy: `benchmarks/results/README.md`.
+
 ### Limitations
 
 - The corpus is hand-authored and synthetic (40 topics); it is not a representative sample of real users, languages or group dynamics.
@@ -174,6 +187,7 @@ Missing behavior episodes: C11_behavior_comfort_missed. Self-impression kinds ex
 - Token usage is a character-based estimate, not provider-reported; `usage_cached` is zero because no prefix cache is simulated.
 - No live AstrBot host is started; host-layer tests remain skipped in CI shells.
 - One deterministic clock and one run per target; no sampling or confidence interval is reported.
+- The committed snapshots were produced on `win32` (`environment.platform=win32`). That field is historical provenance, not a cross-platform assertion; the in-memory store, fixed clock and deterministic provider keep the counts platform-independent.
 - `d9fc248` and the current tree share the same production extraction code, so their identical metrics validate the harness rather than a new production change.
 - `cc814ce` predates the triage and budget parameters. The harness filters unsupported kwargs and runs the same production `DreamCycle -> flush` path without triage; this is the only adaptation.
 
@@ -364,6 +378,19 @@ python benchmarks/dream_tradeoff.py \
 5. 在按这些数字调参前增加 holdout 语料；不要用报告所用的同一批 40 个主题来调阈值。
 6. 每次修改信号、批处理或 pending 策略后重跑本评估，并在结果目录中保留 `cc814ce` / `d9fc248` 对比。
 
+### 生成结果政策
+
+| 文件 | 角色 | 是否预期变化 |
+|---|---|---|
+| `benchmarks/results/dream_tradeoff.md` | 人类可读的规范报告；由脚本生成，不要手改 | 由三份 JSON 快照派生 |
+| `benchmarks/results/dream_tradeoff.json` | 规范聚合结果（comparison + 全部目标） | 随报告一起重建 |
+| `benchmarks/results/dream_tradeoff_cc814ce.json` | 优化前历史基线 | 不可变；重录需新增带日期的文件 |
+| `benchmarks/results/dream_tradeoff_d9fc248.json` | 合并实现历史快照 | 不可变；重录需新增带日期的文件 |
+| `benchmarks/results/dream_tradeoff_current.json` | 当前 checkout 快照 | 相关变更后重新生成 |
+| `benchmarks/data/dream_tradeoff_corpus.jsonl` | 冻结合成语料 | 变更时必须配套新的快照集和报告 |
+
+仅 `dream_tradeoff_current.json` 预期随当前树变化，用 `python benchmarks/dream_eval.py --repo . --label current --output benchmarks/results/dream_tradeoff_current.json` 重新生成；再基于三份快照用 `python benchmarks/dream_tradeoff.py --input cc814ce=benchmarks/results/dream_tradeoff_cc814ce.json --input d9fc248=benchmarks/results/dream_tradeoff_d9fc248.json --input current=benchmarks/results/dream_tradeoff_current.json --baseline cc814ce --target-label d9fc248 --output-json benchmarks/results/dream_tradeoff.json --output-md benchmarks/results/dream_tradeoff.md` 重建聚合与报告。不要原地重生成 `cc814ce` / `d9fc248`。详细政策见 `benchmarks/results/README.md`。
+
 ### 限制
 
 - 语料为手工编写的合成数据（40 个主题），不能代表真实用户、语言或群聊动态。
@@ -371,6 +398,7 @@ python benchmarks/dream_tradeoff.py \
 - token 用量是基于字符的估算，不是 provider 上报值；由于没有模拟前缀缓存，`usage_cached` 为零。
 - 不启动真实 AstrBot host；host 层测试在 CI shell 中仍会跳过。
 - 每个目标使用一个确定性时钟和一次运行；不做采样，也不报告置信区间。
+- 已提交快照在 `win32` 生成（`environment.platform=win32`）。该字段是历史来源，不是跨平台断言；内存存储、固定时钟和确定性 provider 使计数与平台无关。
 - `d9fc248` 与当前工作树共享同一套生产抽取代码，因此指标相同；这说明评估器可复现，而不是新的生产变更。
 - `cc814ce` 早于分诊和预算参数。评估器过滤不支持的参数，仍走同一条生产 `DreamCycle -> flush` 路径，只是不启用分诊；这是唯一适配。
 

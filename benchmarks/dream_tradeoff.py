@@ -731,6 +731,65 @@ def _render_body(
             "保留 `cc814ce` / `d9fc248` 对比。"
         )
 
+    # Generated result policy -------------------------------------------------
+    parts.append(f"\n### {_t(lang, 'Generated result policy', '生成结果政策')}\n")
+    policy_rows = [
+        [
+            "`benchmarks/results/dream_tradeoff.md`",
+            _t(lang, "canonical human report; generated, do not hand-edit",
+               "人类可读的规范报告；由脚本生成，不要手改"),
+            _t(lang, "derived from the three JSON snapshots",
+               "由三份 JSON 快照派生"),
+        ],
+        [
+            "`benchmarks/results/dream_tradeoff.json`",
+            _t(lang, "canonical aggregate (comparison + all targets)",
+               "规范聚合结果（comparison + 全部目标）"),
+            _t(lang, "rebuilt with the report", "随报告一起重建"),
+        ],
+        [
+            "`benchmarks/results/dream_tradeoff_cc814ce.json`",
+            _t(lang, "historical pre-optimization baseline", "优化前历史基线"),
+            _t(lang, "immutable; re-record as a new dated file",
+               "不可变；重录需新增带日期的文件"),
+        ],
+        [
+            "`benchmarks/results/dream_tradeoff_d9fc248.json`",
+            _t(lang, "historical merged implementation", "合并实现历史快照"),
+            _t(lang, "immutable; re-record as a new dated file",
+               "不可变；重录需新增带日期的文件"),
+        ],
+        [
+            "`benchmarks/results/dream_tradeoff_current.json`",
+            _t(lang, "snapshot of the current checkout", "当前 checkout 快照"),
+            _t(lang, "regenerate after relevant changes", "相关变更后重新生成"),
+        ],
+        [
+            "`benchmarks/data/dream_tradeoff_corpus.jsonl`",
+            _t(lang, "frozen synthetic corpus", "冻结合成语料"),
+            _t(lang, "change only with a new snapshot set and report",
+               "变更时必须配套新的快照集和报告"),
+        ],
+    ]
+    parts.append(
+        table(
+            [
+                _t(lang, "file", "文件"),
+                _t(lang, "role", "角色"),
+                _t(lang, "expected to change", "是否预期变化"),
+            ],
+            policy_rows,
+        )
+    )
+    parts.append(
+        "\n"
+        + _t(
+            lang,
+            "Regenerate only `dream_tradeoff_current.json` with `python benchmarks/dream_eval.py --repo . --label current --output benchmarks/results/dream_tradeoff_current.json`; then rebuild the aggregate and report from the three snapshots with `python benchmarks/dream_tradeoff.py --input cc814ce=benchmarks/results/dream_tradeoff_cc814ce.json --input d9fc248=benchmarks/results/dream_tradeoff_d9fc248.json --input current=benchmarks/results/dream_tradeoff_current.json --baseline cc814ce --target-label d9fc248 --output-json benchmarks/results/dream_tradeoff.json --output-md benchmarks/results/dream_tradeoff.md`. Do not regenerate `cc814ce`/`d9fc248` in place. Detailed policy: `benchmarks/results/README.md`.",
+            "仅 `dream_tradeoff_current.json` 预期随当前树变化，用 `python benchmarks/dream_eval.py --repo . --label current --output benchmarks/results/dream_tradeoff_current.json` 重新生成；再基于三份快照用 `python benchmarks/dream_tradeoff.py --input cc814ce=benchmarks/results/dream_tradeoff_cc814ce.json --input d9fc248=benchmarks/results/dream_tradeoff_d9fc248.json --input current=benchmarks/results/dream_tradeoff_current.json --baseline cc814ce --target-label d9fc248 --output-json benchmarks/results/dream_tradeoff.json --output-md benchmarks/results/dream_tradeoff.md` 重建聚合与报告。不要原地重生成 `cc814ce` / `d9fc248`。详细政策见 `benchmarks/results/README.md`。",
+        )
+    )
+
     # Limitations ------------------------------------------------------------
     parts.append(f"\n### {_t(lang, 'Limitations', '限制')}\n")
     if lang == "en":
@@ -747,6 +806,9 @@ def _render_body(
             "shells.\n"
             "- One deterministic clock and one run per target; no sampling or "
             "confidence interval is reported.\n"
+            "- The committed snapshots were produced on `win32` (`environment.platform=win32`). That field is historical provenance, not a "
+            "cross-platform assertion; the in-memory store, fixed clock and "
+            "deterministic provider keep the counts platform-independent.\n"
             "- `d9fc248` and the current tree share the same production extraction "
             "code, so their identical metrics validate the harness rather than a new "
             "production change.\n"
@@ -764,6 +826,8 @@ def _render_body(
             "`usage_cached` 为零。\n"
             "- 不启动真实 AstrBot host；host 层测试在 CI shell 中仍会跳过。\n"
             "- 每个目标使用一个确定性时钟和一次运行；不做采样，也不报告置信区间。\n"
+            "- 已提交快照在 `win32` 生成（`environment.platform=win32`）。该字段是历史来源，"
+            "不是跨平台断言；内存存储、固定时钟和确定性 provider 使计数与平台无关。\n"
             "- `d9fc248` 与当前工作树共享同一套生产抽取代码，因此指标相同；这说明评估器"
             "可复现，而不是新的生产变更。\n"
             "- `cc814ce` 早于分诊和预算参数。评估器过滤不支持的参数，仍走同一条生产 "
