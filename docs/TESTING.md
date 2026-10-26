@@ -118,6 +118,21 @@ The table tracks covered regressions and known gaps. Rows marked as covered alre
 | Windows clock collisions silently lost runtime audit rows | covered by `tests/test_runtime_actions.py` |
 | Due wait/retry selection and per-session scheduler isolation were untested | covered by `tests/test_runtime_scheduler.py` |
 | Repeated run callbacks duplicated assistant Source, checkpoint or episode rows | covered by `tests/test_run_recorder.py` |
+| Dream tradeoff harness became a second Artifact write path | covered by `tests/test_dream_eval.py` |
+| Dream tradeoff report leaked corpus text instead of content-free metrics | covered by `tests/test_dream_eval.py` |
+| Dream tradeoff measurement was nondeterministic or stopped using the production path | covered by `tests/test_dream_eval.py` |
+
+## Dream tradeoff evaluation
+
+`python benchmarks/dream_eval.py --repo . --label current --output benchmarks/results/dream_tradeoff_current.json`
+runs the production `DreamCycle -> IngestService.flush` path against an isolated in-memory SQLite
+store with the frozen 40-topic synthetic corpus in `benchmarks/data/dream_tradeoff_corpus.jsonl`.
+The provider is deterministic and offline; report JSON contains counts, labels and topic ids only.
+
+`python benchmarks/dream_tradeoff.py --target <label>=<checkout> ...` runs each checkout in its own
+process and renders `benchmarks/results/dream_tradeoff.md` with the `cc814ce` / `d9fc248`
+comparison, pending-growth simulation and explicit thresholds. `tests/test_dream_eval.py` guards
+the harness: only `IngestService` commits extraction artifacts, and no corpus text enters a report.
 
 ## Staging and model probes
 
