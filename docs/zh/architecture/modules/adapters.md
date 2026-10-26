@@ -17,9 +17,12 @@ main.py 定义插件入口并委托 lifecycle；组合和 wiring 位于 adapters
 - AstrBotActionPort 提供 MessageSender。
 - ProviderChatModel 将宿主 extraction/persona provider 包装为 ChatModel。
 - SeekMemoryContextAdapter 将 Runtime 的 MemoryContextPort 接到现有 RecallService。
+- RelationshipInteractionPolicy 从 Cache 读取按 subject 唯一且已验证的 Relationship 快照，把既有 Runtime decision 与已记录 Source ID 转成无正文 InteractionGate。AstrBot hook 执行拒绝和固定语气 directive，不把关系语义放进 app/runtime。
 
 AccessService 基于完整 session UMO、sender ID、owner/trusted 配置和 observe_groups 决定观察/召回；宿主事件信息只在边界处转换。配置和 database path 仍由插件组合根读取。
 
 ## 当前边界
 
 宿主 hook 注册必须绑定真实插件模块路径，避免热重载后回调无法识别。Runtime 的工具过滤在模型请求前运行；工具调用完成后的观测 hook 不能作为强制拦截。插件初始化/宿主 API 不可用时，由上层状态和 fail-open 处理，不应把 AstrBot 依赖泄漏到业务模块。
+
+关系拒绝独立于可选的基础 Runtime gate；allowed/neutral 关系不会启用该 gate。low/dislike 的普通私聊陈述按 Source ID 做稳定 `0.8`/`0.5` 采样，真实问题和宿主 direct signal 仍是 required reply；low/dislike 群聊 ambient 被拒绝。Relationship Artifact 不进入 Recall 或管理目录。

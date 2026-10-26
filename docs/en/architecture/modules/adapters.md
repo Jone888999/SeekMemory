@@ -17,9 +17,12 @@ main.py defines the plugin entry point and delegates lifecycle; composition and 
 - AstrBotActionPort provides MessageSender.
 - ProviderChatModel wraps a host extraction/persona provider as ChatModel.
 - SeekMemoryContextAdapter connects Runtime's MemoryContextPort to the existing RecallService.
+- RelationshipInteractionPolicy reads one validated per-subject Relationship snapshot from Cache and converts the existing Runtime decision plus the recorded Source ID into a content-free InteractionGate. AstrBot hooks enforce denial and append fixed style directives without adding relationship semantics to app/runtime.
 
 AccessService uses full session UMO, sender ID, owner/trusted configuration, and observe_groups to decide whether a message can be observed/recalled. Host event details are normalized only at this boundary; plugin composition owns config and database path.
 
 ## Current boundaries
 
 Hook registration must use the real plugin module path, so callbacks stay discoverable after reload. Runtime tool filtering runs before a model request; a tool observation hook after invocation is not enforcement. Host API limitations and plugin startup failures are handled at the outer boundary and must not leak AstrBot dependencies into business modules.
+
+Relationship denial is enforced independently of the opt-in base Runtime gate; an allowed or neutral relationship never enables that gate. Low/dislike ordinary private statements use stable `0.8`/`0.5` Source-ID sampling, while actual questions and direct host signals remain required replies. Low/dislike group ambient is denied. Relationship Artifacts remain excluded from Recall and the management catalog.

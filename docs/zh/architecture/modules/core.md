@@ -21,6 +21,7 @@ family 与 memory level 是两个不同维度：
 | media | type、title、url，可带 summary/shared_by |
 | secret | 带 ref 与 shadow_text 的受保护数据；召回管线排除该 family |
 | designated | 带 text、trigger 与 given 的指定交付内容 |
+| relationship | 按 subject 版本化保存 affinity、confidence、证据数、迟滞档位和无正文 policy snapshot；不进入 Recall |
 
 family 校验器位于 core/families。make 只构造对象，不自动校验；生产调用方在提交前显式调用 validate。revise 保持 ID 与 family，增加 revision 并更新时间。
 
@@ -32,6 +33,8 @@ family 校验器位于 core/families。make 只构造对象，不自动校验；
 - **graph.py / tree.py** 通过注入的仓储协议处理关系边和父子结构，不自行写 SQL。causal 边保留显式接口，没有自动语义推断。
 - **capacity.py** 根据容量快照和可配置阈值，纯函数式地给出状态与调度动作；执行由 services 完成。
 - **trace.py** 清理运行追踪字段并投影运行时间线，限制可保存的数据种类。
+- **relationship.py / relationship_rules.py** 管理稳定关系 ID、快照、迟滞、十类 reason 证据规则、scope 权重、同轮上限和有界 revision plan。模型只分类观察，不能写 affinity、delta、band 或 policy version。
+- **interaction_policy.py** 纯函数地产生稳定回复概率、固定语气、亲昵称呼/follow-up/关心/玩笑权限和未来 proactive kind 权限。采样按不可变 Source ID 稳定；ID 缺失时 fail open。
 
 ## 关键不变量
 
