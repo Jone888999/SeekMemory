@@ -31,6 +31,8 @@ LAYERS: dict[str, tuple[str, ...]] = {
         "test_persona_synthesis_edges.py",
         "test_scope.py",
         "test_seekmemory_context.py",
+        "test_relationship.py",
+        "test_relationship_runtime.py",
         "test_store.py",
         "test_strength.py",
         "test_trace.py",

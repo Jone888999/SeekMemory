@@ -56,6 +56,11 @@ from ..webui.jobs import Jobs
 from ..webui.journal import Journal
 from ..webui.routes import WebRoutes
 from ..webui.trace import Trace
+from .relationship_policy import (
+    RelationshipInteractionPolicy,
+    RelationshipReader,
+    settings_from_config,
+)
 from .astrbot_hooks import AstrBotHooks
 
 class AstrBotPlugin(AstrBotHooks):
@@ -87,6 +92,7 @@ class AstrBotPlugin(AstrBotHooks):
         self.tool_policy: ToolPolicy | None = None
         self.jobs: Jobs | None = None
         self.capacity: CapacityGovernor | None = None
+        self.relationship_policy: RelationshipInteractionPolicy | None = None
         self._last_runtime_prune_at = 0.0
         self._started = False
         self.web = None
@@ -104,6 +110,7 @@ class AstrBotPlugin(AstrBotHooks):
         self.buffer = None
         self.checkpoint = None
         self.dream = None
+        self.relationship_policy = None
         self.data_path = (
             Path(str(self._c("db_path", ""))).expanduser()
             if self._c("db_path", "")
@@ -173,6 +180,15 @@ class AstrBotPlugin(AstrBotHooks):
             model_gateway=AstrBotModelGateway(self.context),
             message_sender=self.actions,
             recorder=recorder,
+        )
+        self.relationship_policy = RelationshipInteractionPolicy(
+            RelationshipReader(self.cache),
+            settings_from_config(
+                self._c,
+                lambda key: logger.warning(
+                    f"[seekmemory] normalized relationship config: {key}"
+                ),
+            ),
         )
         if self.store is not None:
             try:

@@ -338,6 +338,17 @@ class LayerDependencyTest(unittest.TestCase):
                     self.assertNotIn("db", {arg.arg for arg in arguments}, str(path))
                     self.assertNotIn("store", {arg.arg for arg in arguments}, str(path))
 
+    def test_relationship_policy_stays_out_of_recall_and_store(self) -> None:
+        self.assertFalse((ROOT / "services" / "relationship_service.py").exists())
+        schema = (ROOT / "store" / "schema.sql").read_text(encoding="utf-8")
+        self.assertNotIn("CREATE TABLE relationship", schema)
+        imports = self._imports(ROOT / "recall")
+        self.assertFalse([
+            item for item in imports
+            if item.endswith("core.relationship")
+            or item.endswith("runtime.relationship")
+        ])
+
     def test_services_do_not_import_host_or_adapters(self) -> None:
         imports = self._imports(ROOT / "services")
         self.assertFalse(

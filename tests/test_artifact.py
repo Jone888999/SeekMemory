@@ -1,7 +1,6 @@
-"""test_artifact：Artifact 原语的构造、校验、修订与可读文本。
+"""Artifact primitives: construction, validation, revision and readable text.
 
-覆盖六个 family 的 make/validate/content_of、缺字段报错、revision 递增
-与旧版本保留，以及 fact/scene/detail/impression 四个 level。
+Covers all Artifact families, required fields and immutable revisions.
 """
 
 from __future__ import annotations
@@ -24,6 +23,14 @@ from core.artifact import (
     validate,
 )
 
+RELATIONSHIP_POLICY = {
+    "version": "relationship-v1",
+    "private_weight": 1.0,
+    "group_weight": 0.5,
+    "learning_rate": 0.25,
+    "max_revision_delta": 0.1,
+}
+
 FAMILY_PAYLOADS = {
     "memory": {"text": "他加班到很晚", "level": "scene"},
     "example": {"user": "你好", "assistant": "嗨"},
@@ -31,6 +38,14 @@ FAMILY_PAYLOADS = {
     "media": {"type": "video", "title": "大肥鱼是怎么来的", "url": "https://x"},
     "secret": {"ref": "s_1", "shadow_text": "有件事你答应过别人不说"},
     "designated": {"text": "密码是 123", "trigger": "那个东西"},
+    "relationship": {
+        "summary": "关系状态：中性",
+        "affinity": 0.0,
+        "confidence": 0.0,
+        "evidence_count": 0,
+        "relation_band": "neutral",
+        "policy": RELATIONSHIP_POLICY,
+    },
 }
 
 # family -> [(缺的字段, 剩下的合法 payload)]
@@ -57,6 +72,12 @@ MISSING_FIELDS = {
         ("text", {"trigger": "那个东西"}),
         ("trigger", {"text": "密码"}),
     ],
+    "relationship": [
+        ("summary", {
+            "affinity": 0.0, "confidence": 0.0,
+            "evidence_count": 0, "relation_band": "neutral",
+        }),
+    ],
 }
 
 LEVELS = ("fact", "scene", "detail", "impression")
@@ -75,10 +96,10 @@ class _TempDirCase(unittest.TestCase):
 
 
 class MakeValidateTest(_TempDirCase):
-    """make / validate：六个 family 的必填字段与默认头。"""
+    """make / validate required fields and default headers."""
 
     def test_make_and_validate_all_families(self) -> None:
-        """六个 family 都能构造并通过校验，默认头符合契约。"""
+        """Every family constructs and validates with the common header."""
         seen_ids = set()
         for family, payload in FAMILY_PAYLOADS.items():
             with self.subTest(family=family):
@@ -130,6 +151,10 @@ class MakeValidateTest(_TempDirCase):
             ("media", {"type": "video", "title": "", "url": "https://x"}),
             ("secret", {"ref": "s_1", "shadow_text": ""}),
             ("designated", {"text": "", "trigger": "那个东西"}),
+            ("relationship", {
+                "summary": "", "affinity": 0.0, "confidence": 0.0,
+                "evidence_count": 0, "relation_band": "neutral",
+            }),
         ]
         for family, payload in cases:
             with self.subTest(family=family):
@@ -188,6 +213,12 @@ class ContentOfTest(_TempDirCase):
             ),
             ("secret", {"ref": "s_1", "shadow_text": "有件事你答应过别人不说"}, "有件事你答应过别人不说"),
             ("designated", {"text": "密码是 123", "trigger": "那个东西"}, "密码是 123"),
+            ("relationship", {
+                "summary": "关系状态：中性", "affinity": 0.0,
+                "confidence": 0.0, "evidence_count": 0,
+                "relation_band": "neutral",
+                "policy": RELATIONSHIP_POLICY,
+            }, "关系状态：中性"),
         ]
         for family, payload, expected in cases:
             with self.subTest(family=family):
@@ -209,6 +240,10 @@ class ContentOfTest(_TempDirCase):
             make("persona", {}),
             make("secret", {"ref": "s_1"}),
             make("designated", {"trigger": "那个东西"}),
+            make("relationship", {
+                "affinity": 0.0, "confidence": 0.0,
+                "evidence_count": 0, "relation_band": "neutral",
+            }),
         ]
         for art in broken:
             with self.subTest(family=art.header.family):
