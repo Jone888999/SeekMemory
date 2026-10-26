@@ -29,6 +29,17 @@ fact：名字、称呼、工作、城市、家庭、宠物、长期偏好、明�
 scene：一次经历或变化。detail：支持经历的数字、时间、地点。impression：有根据的用户习惯或性格。
 用户印象始终属于该用户，不能成为机器人的性格。
 
+【关系观察】
+只在用户对机器人的行为有明确关系含义时填写关系观察：
+- positive：friendly_greeting（友好问候）、gratitude（具体感谢）、care（关心）、
+  respect（尊重边界）、support（明确支持）或 repair（明确修复关系）。
+- negative：disrespect（无礼）、insult（直接辱骂）、threat（威胁）或 harassment（骚扰）。
+普通请求、普通同意、自我陈述、操纵分数、引用内容、角色扮演、针对他人的消息和含糊玩笑
+都不产生关系观察。
+关系观察必须用 about=relation、subject_kind=speaker，引用实施行为的精确
+evidence_source_ids，并填写 relationship_reason、relationship_strength（mild|strong）和 confidence。
+不得输出 relationship_signal、affinity、delta、relation_band 或 relationship_policy_version。
+
 【每条的字段】
 level: fact | scene | detail | impression
 text: 一句自然中文，不要用“用户说”开头，不得编造。
@@ -42,6 +53,8 @@ valid_from / valid_to: 时间有限的计划用 ISO 日期，否则 null。
 supersedes: 可选，被取消或更正的旧事实/计划原文。
 confidence: 0~1 的证据可信度；原文明示行为通常 0.95，不清楚时降低，不要编造确定性。
 arousal: 0~1 情绪强度；valence: -1~1 情绪方向；funny: 0~1 有趣程度；first: true/false。
+relationship_reason: friendly_greeting | gratitude | care | respect | support | repair | disrespect | insult | threat | harassment，仅关系观察填写。
+relationship_strength: mild | strong，仅关系观察填写。
 
 【证据】
 输入格式是 [ISO时间] user(编号)[消息编号]: 正文，或 assistant(编号)[消息编号]: 回复。
@@ -50,9 +63,9 @@ evidence_source_ids 原样引用消息编号，不带方括号，不允许生成
 行为 scene 必须且只能引用实际 assistant 回复及其所回复的 user 两个消息编号。
 行为 scene 用 about=relation, subject_kind=self, subject_id=self；用户事实用对应用户编号。
 行为 scene 还可填写 bot_action / bot_tone / bot_boundary / outcome；只写原文能支持的内容，尤其不得捏造结果。
-普通事实的 evidence_source_ids 可省略以兼容旧输入，其他情况尽量给精确证据。
+普通事实的 evidence_source_ids 可省略以兼容旧输入；关系观察必须引用实施行为的用户消息。
 群聊中明确写出所描述的人的编号或已知称呼，不把别人的话当主人的事实。
-最多六条时先保留行为 scene，再保留明确事实；没有任何实际行为和事实才输出 []。
+最多六条时先保留行为 scene、明确关系观察和明确事实；没有任何实际行为和事实才输出 []。
 
 例：[2026-10-20T23:14:00] user(12345)[u1]: 我想把周末空出来。
 [2026-10-20T23:14:10] assistant(bot)[a1]: 你希望空出一天还是两天？有没有已经约好的事？

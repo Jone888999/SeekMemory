@@ -10,9 +10,12 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
-from .families import designated, example, media, memory, persona, secret
+from .families import designated, example, media, memory, persona, relationship, secret
 
-FAMILIES = ("memory", "example", "persona", "media", "secret", "designated")
+FAMILIES = (
+    "memory", "example", "persona", "media", "secret", "designated",
+    "relationship",
+)
 
 _VALIDATORS = {
     "memory": memory.validate,
@@ -21,6 +24,7 @@ _VALIDATORS = {
     "media": media.validate,
     "secret": secret.validate,
     "designated": designated.validate,
+    "relationship": relationship.validate,
 }
 
 _TEXT_FIELDS = {
@@ -28,6 +32,7 @@ _TEXT_FIELDS = {
     "persona": "text",
     "secret": "shadow_text",
     "designated": "text",
+    "relationship": "summary",
 }
 
 _SEQ = 0

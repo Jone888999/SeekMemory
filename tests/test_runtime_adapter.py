@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapters.astrbot.model import AstrBotModelGateway  # noqa: E402
 from adapters.astrbot.runtime import AstrBotRuntimeAdapter  # noqa: E402
 from app.runtime import WakeAction, RunDecision, UserRunReceipt  # noqa: E402
+from core.interaction_policy import InteractionGate, ReplyStyle  # noqa: E402
 from core.source import make_source_id  # noqa: E402
 
 
@@ -37,14 +38,19 @@ class Event:
 
 
 class AdapterTest(unittest.TestCase):
-    def test_private_event_maps_to_direct_input(self) -> None:
+    def test_private_event_maps_actual_host_direct_signal(self) -> None:
+        event = Event(True)
         result = AstrBotRuntimeAdapter.from_event(
-            Event(True), "hello?", "s1", "u1", unread_count=3
+            event, "hello?", "s1", "u1", unread_count=3
         )
         self.assertTrue(result.private)
-        self.assertTrue(result.mentioned)
+        self.assertFalse(result.mentioned)
         self.assertTrue(result.question)
         self.assertEqual(result.unread_count, 3)
+        event.is_at_or_wake_command = True
+        self.assertTrue(
+            AstrBotRuntimeAdapter.from_event(event, "hello", "s1", "u1").mentioned
+        )
 
     def test_source_event_time_parses_iso_and_defaults_to_zero(self) -> None:
         self.assertEqual(
@@ -152,11 +158,15 @@ class AdapterTest(unittest.TestCase):
 
     def test_decision_is_exposed_as_event_metadata(self) -> None:
         event = Event(False)
+        gate = InteractionGate(style=ReplyStyle.WARM, reason="relationship_warm")
         AstrBotRuntimeAdapter.apply_decision(
-            event, RunDecision(WakeAction.OBSERVE, "ambient_message")
+            event,
+            RunDecision(WakeAction.OBSERVE, "ambient_message"),
         )
+        AstrBotRuntimeAdapter.bind_interaction(event, gate)
         self.assertEqual(event.extras["_seekmemory_runtime_action"], "observe")
         self.assertEqual(event.extras["_seekmemory_runtime_reason"], "ambient_message")
+        self.assertIs(AstrBotRuntimeAdapter.interaction_gate(event), gate)
 
     def test_accepted_cursor_survives_reply_metadata_binding(self) -> None:
         event = Event(False)
