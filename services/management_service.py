@@ -5,8 +5,11 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
+import hashlib
 
 try:
+    from ..app.console_ports import PersonaPacks, DreamJournal
+    from . import console_projection
     from ..app.ports import ArtifactCache, ArtifactStore, LedgerStore, SourceStore
     from ..core.artifact import Artifact, Lineage, Strength, content_of, make, revise, validate
     from ..core.bot_behavior import SELF_SUBJECT
@@ -15,6 +18,8 @@ try:
     from ..recall.scope import owner_of
     from .recall_service import RecallService
 except ImportError:
+    from app.console_ports import PersonaPacks, DreamJournal
+    from services import console_projection
     from app.ports import ArtifactCache, ArtifactStore, LedgerStore, SourceStore
     from core.artifact import Artifact, Lineage, Strength, content_of, make, revise, validate
     from core.bot_behavior import SELF_SUBJECT
@@ -44,12 +49,83 @@ class ManagementService:
 
     def __init__(self, artifacts: ArtifactStore, sources: SourceStore,
                  ledger: LedgerStore, cache: ArtifactCache,
-                 recall_service: RecallService) -> None:
+                 recall_service: RecallService, *, packs: PersonaPacks | None = None,
+                 dreams: DreamJournal | None = None) -> None:
         self.artifacts = artifacts
         self.sources = sources
         self.ledger = ledger
         self.cache = cache
         self.recall_service = recall_service
+        self.packs = packs
+        self.dreams = dreams
+
+    def graph(self, limit: int = 1000) -> dict:
+        if not 1 <= limit <= 1000:
+            raise ValueError("星图上限必须为 1–1000")
+        return console_projection.graph(self.artifacts, limit=limit)
+
+    def impressions(self, offset: int = 0, limit: int = 100) -> dict:
+        if not 0 <= offset <= 100000 or not 1 <= limit <= 100:
+            raise ValueError("分页参数无效")
+        return console_projection.impressions(self.artifacts, offset=offset, limit=limit)
+
+    def dream_journal(self) -> dict:
+        return console_projection.dreams(self.dreams.recent(100) if self.dreams else [])
+
+    def pack_catalog(self, collection: str = "official", offset: int = 0) -> dict:
+        if self.packs is None:
+            raise RuntimeError("人格包目录不可用")
+        return self.packs.catalog(collection, offset, 24)
+
+    def pack_detail(self, reference: str) -> dict:
+        if self.packs is None:
+            raise RuntimeError("人格包目录不可用")
+        seed = self.packs.read(reference)
+        return {"seed": seed, "digest": self._pack_digest(seed)}
+
+    @staticmethod
+    def _pack_digest(seed: dict) -> str:
+        return hashlib.sha256(json.dumps(seed, ensure_ascii=False, sort_keys=True,
+                                         separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    def persona_action(self, body: dict) -> dict:
+        if self.packs is None:
+            raise RuntimeError("人格包目录不可用")
+        if body.get("confirmed") is not True:
+            raise ValueError("请先确认操作")
+        operation = body.get("operation")
+        fields = {
+            "import": {"operation", "seed", "confirmed"},
+            "remove": {"operation", "reference", "confirmed"},
+            "install": {"operation", "reference", "expectedId", "expectedRevision", "expectedDigest", "confirmed"},
+        }
+        if not isinstance(operation, str) or operation not in fields or set(body) - ({"expectedVersion"} if operation == "import" else set()) != fields[operation]:
+            raise ValueError("人格操作字段无效")
+
+        reference = body.get("reference", "")
+        if not isinstance(reference, str):
+            raise ValueError("人格包标识无效")
+        if operation == "import":
+            expected = body.get("expectedVersion")
+            if "expectedVersion" in body and not isinstance(expected, str):
+                raise ValueError("人格包版本无效")
+            return {"reference": self.packs.save(body.get("seed"), expected)}
+        if operation == "remove":
+            self.packs.remove(reference)
+            return {"reference": reference}
+        if operation != "install":
+            raise ValueError("未知人格操作")
+        current = sorted(self.cache.active("persona"), key=lambda art: (
+            art.header.subject_id != SELF_SUBJECT, art.header.time.created, art.header.id))
+        base = current[0] if current else None
+        if (body.get("expectedId") != (base.header.id if base else None)
+                or type(body.get("expectedRevision")) is not int
+                or body["expectedRevision"] != (base.header.revision if base else 0)):
+            raise ValueError("revision_conflict")
+        seed = self.packs.read(reference)
+        if body.get("expectedDigest") != self._pack_digest(seed):
+            raise ValueError("pack_changed")
+        return self.bootstrap_persona(seed)
 
     def catalog(self) -> list[dict]:
         """将所有 Artifact 家族转换为统一的记忆库契约。

@@ -27,9 +27,6 @@ export function RuntimePanel({
     <section className="mx-auto w-full max-w-6xl space-y-6 p-5 sm:p-8">
       <div className="workspace-intro">
         <h1 className="text-2xl font-semibold">运行检测与任务</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          检查引擎、账本、模型配置与持久化状态，查看待处理会话。
-        </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[

@@ -57,6 +57,7 @@ from ..webui.journal import Journal
 from ..webui.routes import WebRoutes
 from ..webui.trace import Trace
 from .astrbot_hooks import AstrBotHooks
+from .persona_packs import FilePersonaPacks
 
 class AstrBotPlugin(AstrBotHooks):
     """Composition root and lifecycle owner for the AstrBot host.
@@ -143,6 +144,9 @@ class AstrBotPlugin(AstrBotHooks):
             ledger=self.store.ledger if self.store is not None else None,
             cache=self.cache,
             recall_service=recall,
+            packs=FilePersonaPacks(Path(__file__).resolve().parents[1] / "persona_seeds",
+                                   self.data_path.parent / "persona_packs"),
+            dreams=self.store.dreams if self.store is not None else None,
         )
         if self.store is not None:
             state_store = RepoStateStore(self.store.runtime_state)

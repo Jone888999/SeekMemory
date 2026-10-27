@@ -132,18 +132,17 @@ function TraceStep({
 export function RunTraces({
   client,
   onInspect,
+  initialRun = "",
 }: {
   client: ManagementClient
+  initialRun?: string
   onInspect: (id: string) => void
 }) {
-  const vm = useRunTraces(client)
+  const vm = useRunTraces(client, initialRun)
   return (
     <section className="mx-auto w-full max-w-7xl space-y-5 p-5 sm:p-8">
       <div className="workspace-intro">
         <h1 className="text-2xl font-semibold">运行轨迹</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          查看一次回复经过的步骤，以及记忆为什么被使用或隐藏。
-        </p>
       </div>
       {vm.error && (
         <p role="alert" className="text-sm text-destructive">

@@ -93,6 +93,8 @@ class StatusService:
             "origin": str(current.payload.get("origin") or ""),
             "synthesis": str(current.payload.get("synthesis") or ""),
             "changeReason": str(current.payload.get("change_reason") or ""),
+            "seedId": str(current.payload.get("seed_id") or ""),
+            "seedVersion": str(current.payload.get("seed_version") or ""),
             "corpusCount": int(
                 current.payload.get("corpus_count")
                 or len(current.payload.get("corpus") or [])

@@ -7,12 +7,12 @@ import {
   type TraceSnapshot,
 } from "./trace-model.ts"
 
-export function useRunTraces(client: ManagementClient) {
+export function useRunTraces(client: ManagementClient, initialRun = "") {
   const [snapshot, setSnapshot] = useState<TraceSnapshot | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<TraceFlag | "all">("all")
-  const [selected, setSelected] = useState("")
+  const [selected, setSelected] = useState(initialRun)
   const [limit, setLimit] = useState(50)
   const generation = useRef(0)
   const load = useCallback((): Promise<void> => {

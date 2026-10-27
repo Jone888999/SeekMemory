@@ -55,3 +55,20 @@ python3 scripts/live_probe.py --db /path/to/memory.db --label live --json
     python3 benchmarks/real_eval.py --cases benchmarks/data/extraction_smoke.jsonl --dry-run
 
 Set `SEEKMEMORY_EVAL_BASE_URL`, `SEEKMEMORY_EVAL_API_KEY` and `SEEKMEMORY_EVAL_MODEL` for a real run.
+
+### Console preview (#82 / #83)
+
+`pnpm --dir dashboard dev` opens the explicitly labelled local Mock console at
+`http://127.0.0.1:5176/`. Hash links include `#/home`, `#/persona?revision=2`,
+`#/memory?node=<artifact-id>`, `#/store`, `#/dream` and `#/traces?node=<run-id>`.
+The preview selector includes loading, empty, error and a 1,000-node/2,000-edge
+stress fixture. Preview install/import/edit actions affect memory-only fixtures.
+`dev:host` and production builds use the authenticated AstrBot page bridge.
+
+Official persona files live at `persona_seeds/<id>/persona.json`. Add the ID to
+`index.json`, include a LICENSE and follow `docs/PERSONA_SEED.md`. Local imports
+are saved under the plugin data directory's `persona_packs/`; removing a pack
+moves it to `.trash`, leaving the active persona unchanged. To recover a removed
+blueprint, import its backup JSON through My Packs (after checking the ID/version).
+For an updated same-ID file, enter the currently stored version when confirming
+import. Updating a file does not automatically install it.

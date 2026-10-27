@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { ControlWorkspace } from "@/features/control/views/control-workspace"
+import { ConsoleWorkspace } from "@/features/shell/console-workspace"
 import { astrbotClient } from "@/infrastructure/astrbot-client"
 
 // Vite 会从生产构建中移除此分支及其示例数据导入。
@@ -23,5 +23,5 @@ export default function App() {
     )
   }
 
-  return <ControlWorkspace client={astrbotClient} />
+  return <ConsoleWorkspace client={astrbotClient} />
 }

@@ -38,6 +38,9 @@ export const personaRevisionSchema = z.object({
   at: z.string(),
   op: z.string(),
   text: z.string(),
+  origin: z.string().exactOptional(),
+  synthesis: z.string().exactOptional(),
+  changeReason: z.string().exactOptional(),
   derivedFrom: z.array(z.string()).default([]),
   sourceIds: z.array(z.string()).default([]),
 })
@@ -89,6 +92,12 @@ export const statusSchema = z.object({
       id: z.string(),
       revision: z.number().int().nonnegative(),
       text: z.string(),
+      origin: z.string().exactOptional(),
+      synthesis: z.string().exactOptional(),
+      changeReason: z.string().exactOptional(),
+      seedId: z.string().exactOptional(),
+      seedVersion: z.string().exactOptional(),
+      corpusCount: z.number().int().nonnegative().exactOptional(),
       revisions: z.array(personaRevisionSchema),
     })
     .nullable()
@@ -165,6 +174,7 @@ export type UpdateCommand = z.infer<typeof updateSchema>
 export type DiagnosticQuery = ApiRequest<"diagnose">
 
 export interface ManagementClient {
+  console?: import("../shell/model.ts").ConsoleClient
   traces(): Promise<TraceSnapshot>
   records(): Promise<readonly MemoryRecord[]>
   status(): Promise<RuntimeStatus>

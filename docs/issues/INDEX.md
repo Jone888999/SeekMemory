@@ -39,6 +39,8 @@
 | [ISSUE-0033](ISSUE-0033-token-source-context.md) | Token 控制、Source 证据召回与 Dream 分诊批处理 | P1 | verified | Memory 优先；Source 只做证据；Dream 分诊 + 同会话批处理；真实调用/token 预算与 usage 台账。 |
 | [ISSUE-0034](ISSUE-0034.md) | 人格注入被 180 字截断：seed 人格永远只到第一段 | P1 | merged | 人格句复用单条记忆的 `_clean(180)`；改为整段注入并补 bootstrap CLI 与回归测试。 |
 
+| [ISSUE-0035](ISSUE-0035.md) | Persona console and local seed catalogue (GitHub #82 / #83) | P2 | in_progress | 本地实现与验收见 PR-0035；待界面审阅及宿主验收。 |
+
 ## 关系图（读的顺序）
 
 - **隐私/可见性**：ISSUE-0003（scope 过滤）→ ISSUE-0004（指定记忆交付）→
