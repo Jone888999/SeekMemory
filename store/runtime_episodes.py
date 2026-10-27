@@ -112,7 +112,7 @@ class RuntimeEpisodeRepository(SqliteRepository):
                     str(action.get("session_id") or ""),
                     _safe_action_reason(action.get("reason")),
                     kind,
-                    int(status == "succeeded"),
+                    int(status == "succeeded" and kind == "send_text"),
                     status,
                     str(action.get("run_id") or ""),
                     action_id,

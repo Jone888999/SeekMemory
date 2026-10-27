@@ -147,6 +147,34 @@ class ActionLedgerTest(unittest.TestCase):
         self.assertEqual(sorted(row["attempt"] for row in rows), [1, 2, 2])
         self.assertEqual(sum(row["action_status"] == "succeeded" for row in rows), 1)
 
+    def test_only_successful_send_text_is_marked_delivered(self) -> None:
+        records = []
+        for index, kind in enumerate((
+            ActionKind.SEND_TEXT,
+            ActionKind.TOOL_CALL,
+            ActionKind.HOST_ACTION,
+        )):
+            attempted = self.ledger.begin(
+                session_id="session-1",
+                run_id="run-1",
+                callback_key=f"delivery-{index}",
+                kind=kind,
+                at=180.0 + index,
+            )
+            records.append(self.ledger.finish(
+                attempted, ActionStatus.SUCCEEDED, at=190.0 + index
+            ))
+
+        rows = {
+            row["action_id"]: row
+            for row in self.repository.list_actions("session-1")
+            if row["action_status"] == "succeeded"
+        }
+
+        self.assertEqual(rows[records[0].action_id]["delivered"], 1)
+        self.assertEqual(rows[records[1].action_id]["delivered"], 0)
+        self.assertEqual(rows[records[2].action_id]["delivered"], 0)
+
     def test_terminal_transition_requires_an_attempt(self) -> None:
         attempted = self.begin("call-4")
         terminal = self.ledger.finish(attempted, ActionStatus.CANCELLED, at=140.0)
