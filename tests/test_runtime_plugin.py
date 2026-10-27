@@ -43,6 +43,9 @@ AstrBotPlugin = importlib.import_module(
 AstrBotHooks = importlib.import_module(
     f"{ROOT.name}.adapters.astrbot.hooks"
 ).AstrBotHooks
+AttentionHooks = importlib.import_module(
+    f"{ROOT.name}.adapters.astrbot.attention"
+).AttentionHooks
 ToolPolicy = importlib.import_module(f"{ROOT.name}.app.runtime").ToolPolicy
 
 
@@ -57,6 +60,10 @@ class _Sources:
 
 
 class RuntimePluginContextTest(unittest.TestCase):
+    def test_plugin_uses_explicit_host_composition(self):
+        self.assertNotIn(AstrBotHooks, AstrBotPlugin.__mro__)
+        self.assertNotIn(AttentionHooks, AstrBotPlugin.__mro__)
+
     def test_make_run_context_maps_source_event_and_receipt_time(self):
         plugin = object.__new__(AstrBotPlugin)
         plugin._self_id = "bot-1"
