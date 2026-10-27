@@ -6,15 +6,15 @@
 
 - 新增默认关闭的主动决策纯策略，显式处理到期时间、安静窗口、冷却、重试、忽略连击退避和最大尝试次数；有界选择器优先派发最早到期会话，其余保持待处理。
 - 扩展 `runtime_episodes` 保存无正文的动作尝试与终态；重复回调幂等，每个 action 最多保留一个终态，并沿用现有保留清理。
-- `SessionState` 增加独立的注意力额度和重置时间字段；为调用方明确识别的旧 `session#speaker` 额度行提供迁移，保留旧额度且不重解释普通未读数。
 - 新增 `AgentRuntime.schedule_proactive()` 和 AstrBot `proactive_idle_seconds` 排期入口；主动策略从纯策略接到真实 worker。宿主发送动作也进入 action ledger，成功/失败均形成无正文终态。
+- 将 AgentRuntime 默认注意力收敛为单一 `DefaultAttentionPolicy`：主人/私聊/直接提及回复，非主人直接提及后按说话人保留 3 轮后续回复；移除默认路径中的额度、preset、阈值、关系/热度信号和场景提示，策略结果只通过 `AttentionDecision` 向 Runtime 返回通用状态补丁。
 
 ### English
 
 - Add a default-closed pure proactive policy for due times, quiet windows, cooldown, retry, ignored-streak backoff and maximum attempts. Its bounded selector dispatches the oldest eligible sessions first and leaves the rest pending.
 - Extend `runtime_episodes` with content-free action attempts and terminal outcomes. Duplicate callbacks are idempotent, each action keeps at most one terminal outcome, and existing retention cleanup applies.
-- Add separate attention quota and reset-time fields to `SessionState`. Provide migration for legacy `session#speaker` quota rows when identified by the caller, preserving saved quota values without reinterpreting normal unread counts.
 - Add `AgentRuntime.schedule_proactive()` and the AstrBot `proactive_idle_seconds` scheduling entry so the pure proactive policy reaches the real worker. Host send actions now enter the action ledger with content-free success/failure terminals.
+- Collapse the default AgentRuntime attention path to one `DefaultAttentionPolicy`: owner, private, and direct attention reply; a non-owner direct interaction retains a per-speaker three-round follow-up window; quota, presets, thresholds, relationship/heat signals, and scene hints are removed from the default path. Policy results return a generic state patch through `AttentionDecision`.
 
 ## 0.4.3 — 2026-10-27
 

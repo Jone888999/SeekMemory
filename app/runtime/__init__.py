@@ -8,6 +8,7 @@ from .contracts import (
     ActionResult,
     ActionSink,
     ActionStatus,
+    AttentionDecision,
     AttentionLevel,
     Clock,
     MemoryContext,
@@ -40,6 +41,7 @@ from .episode import (
     safe_error_code,
 )
 from .actions import ActionLedger, RepoActionSink, action_idempotency_key
+from .attention import DefaultAttentionPolicy
 from .recorder import RecordedReply, RecordedTurn, RunRecorder
 from .proactive import (
     DefaultProactivePolicy,
@@ -53,7 +55,6 @@ from .state import (
     InMemoryStateStore,
     JsonStateStore,
     RepoStateStore,
-    migrate_legacy_attention_quota,
 )
 from .tools import (
     ToolCall,
@@ -61,7 +62,6 @@ from .tools import (
     ToolPolicy,
     tool_result_failed,
 )
-from .wake import WakePolicy
 from .worker import RuntimeWorker
 
 __all__ = [
@@ -74,8 +74,10 @@ __all__ = [
     "ActionSink",
     "ActionStatus",
     "AgentRuntime",
+    "AttentionDecision",
     "AttentionLevel",
     "Clock",
+    "DefaultAttentionPolicy",
     "DefaultProactivePolicy",
     "ProactiveCandidate",
     "ProactiveDispatchPlan",
@@ -114,14 +116,12 @@ __all__ = [
     "TraceSink",
     "RunDecision",
     "WakeAction",
-    "WakePolicy",
     "delivery_failure_metadata",
     "delivery_failure_outcome",
     "episode_outcome",
     "action_idempotency_key",
     "plan_proactive_dispatch",
     "normalize_tool_calls",
-    "migrate_legacy_attention_quota",
     "safe_error_code",
     "tool_result_failed",
 ]

@@ -15,6 +15,7 @@ from .contracts import (
     ProactiveDecision,
     ModelGateway,
     RunContext,
+    AttentionDecision,
     RunDecision,
     RunResult,
     RuntimeInput,
@@ -25,7 +26,7 @@ from .contracts import (
     WakeAction,
 )
 from .recorder import RecordedReply, RunRecorder
-from .wake import WakePolicy
+from .attention import DefaultAttentionPolicy
 
 
 class AgentRuntime:
@@ -34,7 +35,7 @@ class AgentRuntime:
     def __init__(
         self,
         store: SessionStateStore,
-        policy: WakePolicy | None = None,
+        policy: DefaultAttentionPolicy | None = None,
         trace: TraceSink | None = None,
         clock: Callable[[], float] | None = None,
         memory_context: MemoryContextPort | None = None,
@@ -44,7 +45,7 @@ class AgentRuntime:
         recorder: RunRecorder | None = None,
     ) -> None:
         self.store = store
-        self.policy = policy or WakePolicy()
+        self.policy = policy or DefaultAttentionPolicy()
         self.trace = trace
         self.clock = clock or (lambda: 0.0)
         self.memory_context = memory_context
@@ -106,7 +107,15 @@ class AgentRuntime:
         state.unread_count = max(
             int(event.unread_count), observed_seq - int(state.read_through_seq), 1
         )
-        decision = self.policy.evaluate(event, state, moment)
+        policy_decision = self.policy.evaluate(event, state, moment)
+        speaker_id = str(policy_decision.followup_speaker_id or "")
+        if speaker_id and policy_decision.followup_remaining is not None:
+            remaining = max(0, int(policy_decision.followup_remaining))
+            if remaining:
+                state.followup_by_speaker[speaker_id] = remaining
+            else:
+                state.followup_by_speaker.pop(speaker_id, None)
+        decision = policy_decision.runtime_decision()
         state.last_action = decision.action.value
         state.last_reason = decision.reason
         if decision.action is WakeAction.REPLY:
