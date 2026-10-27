@@ -12,6 +12,32 @@ from pathlib import Path
 from .contracts import SessionState
 
 
+def migrate_legacy_attention_quota(
+    state: SessionState, *, legacy_quota_record: bool
+) -> bool:
+    """Move a legacy per-speaker quota value out of ``unread_count`` once.
+
+    Callers must identify the old composite ``session#speaker`` quota record;
+    normal session unread counters are never migrated.
+    """
+    if not legacy_quota_record:
+        return False
+    try:
+        if int(state.attention_quota or 0) > 0:
+            return False
+        quota = max(0, int(state.unread_count or 0))
+    except (TypeError, ValueError, OverflowError):
+        quota = 0
+    if quota <= 0:
+        return False
+    state.attention_quota = quota
+    # Legacy quota rows had no enforced TTL. A zero reset time preserves their
+    # current behavior until a new addressed event sets an explicit deadline.
+    state.attention_quota_reset_at = 0.0
+    state.unread_count = 0
+    return True
+
+
 def session_state_from_payload(
     session_id: str, raw: dict | None
 ) -> SessionState:

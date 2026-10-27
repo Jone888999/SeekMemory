@@ -13,6 +13,14 @@ app/runtime 定义不依赖 AstrBot 的会话状态、注意力决策和运行�
 - MemoryContextPort 将运行时输入交给既有 RecallService；Runtime 本身不实现第二套记忆检索。
 - ActionPort 接收临时 ActionRequest（session_id、kind、text），返回 ActionResult（ok、reason）。MessageSender 的布尔发送接口保持兼容；ActionRecord 仍只保存无正文审计信息，执行结果不负责决定审计终态。
 
+## 主动策略与动作审计
+
+`DefaultProactivePolicy` 是确定性的纯状态策略。它要求显式传入 `now`，返回下一次可执行时间，并检查到期时间、安静截止时间、冷却、重试、忽略连击退避和尝试次数上限。它不做 I/O、不调用模型、不修改状态；默认关闭，只有 runtime composition 明确启用后才会生效。`plan_proactive_dispatch` 按到期时间排序可执行会话，应用每轮派发上限，并将超出部分作为仍然到期的任务留待后续轮次。
+
+`ActionLedger` 记录动作尝试及至多一个终态（`succeeded`、`failed` 或 `cancelled`）。幂等键由会话、run、动作类型和宿主 callback key 稳定生成；callback key 本身不会落盘。`RepoActionSink` 通过 `RuntimeEpisodeRepository` 写入元数据。审计仅保留标识符、时间戳、受限原因码、尝试序号和状态，不保存消息正文、prompt、工具参数或结果。
+
+`SessionState` 将注意力额度和重置时间与未读数分开。旧数据迁移 helper 只在调用方确认这是旧 `session#speaker` 额度记录时，才会把 `unread_count` 移入额度字段。旧额度没有实际生效的 TTL，因此迁移时保留额度且不设重置期限。
+
 ## 两条运行路径
 
 **普通 AstrBot 回复**：hook 将用户消息交给 AgentRuntime.accept_user；RunRecorder 写用户 Source/队列；请求 hook 由 runtime.build_context 取得记忆；模型与宿主发送完成后，capture/delivery hooks 经 AgentRuntime/RunRecorder 记录助手 Source、召回强化和 EpisodeRecord。

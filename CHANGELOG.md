@@ -4,15 +4,15 @@
 
 ### 中文
 
-- 补齐 AstrBot 生命周期清理和 DSH 运行时协议桥：支持能力识别、同轮 Source 回执与时间传递、服务决策映射和卸载取消；运行时写失败不补发旧捕获，生成回复不冒充已交付。新增共享契约、宿主与本机模拟服务测试，真实 DSH/Python 联调及 #117 动作审计接线仍待完成，无数据库或配置变更。
-
-- 补齐宿主动作执行接口，AstrBot 发送复用同一入口；不支持的动作和宿主失败返回固定原因码，取消继续交给运行时恢复。动作正文不进入审计，不修改数据库、公开配置或运行时策略。
+- 新增默认关闭的主动决策纯策略，显式处理到期时间、安静窗口、冷却、重试、忽略连击退避和最大尝试次数；有界选择器优先派发最早到期会话，其余保持待处理。
+- 扩展 `runtime_episodes` 保存无正文的动作尝试与终态；重复回调幂等，每个 action 最多保留一个终态，并沿用现有保留清理。
+- `SessionState` 增加独立的注意力额度和重置时间字段；为调用方明确识别的旧 `session#speaker` 额度行提供迁移，保留旧额度且不重解释普通未读数。
 
 ### English
 
-- Harden AstrBot lifecycle cleanup and add the DSH runtime protocol bridge with capability detection, per-turn Source receipts and time metadata, server decision mapping, and unload cancellation. Failed runtime writes never fall back to legacy capture, and generation is not treated as delivery. Add shared-contract, host, and loopback mock tests. Real DSH/Python integration and the #117 action audit wiring remain pending; no database or configuration changes.
-
-- Add the host action execution port and route AstrBot sends through it. Unsupported actions and host failures return fixed reason codes; cancellation propagates to runtime recovery. Action text stays out of audit, with no database, public configuration, or runtime policy change.
+- Add a default-closed pure proactive policy for due times, quiet windows, cooldown, retry, ignored-streak backoff and maximum attempts. Its bounded selector dispatches the oldest eligible sessions first and leaves the rest pending.
+- Extend `runtime_episodes` with content-free action attempts and terminal outcomes. Duplicate callbacks are idempotent, each action keeps at most one terminal outcome, and existing retention cleanup applies.
+- Add separate attention quota and reset-time fields to `SessionState`. Provide migration for legacy `session#speaker` quota rows when identified by the caller, preserving saved quota values without reinterpreting normal unread counts.
 
 ## 0.4.3 — 2026-10-27
 
