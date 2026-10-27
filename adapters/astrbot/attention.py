@@ -59,7 +59,7 @@ class AttentionHooks:
     # ---------------- 配置 ----------------
     def _attention_enabled(self) -> bool:
         try:
-            return bool(self._c("attention_policy_enabled", True))
+            return bool(self._c("attention_policy_enabled", False))
         except Exception:  # noqa: BLE001
             return False
 

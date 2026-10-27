@@ -201,7 +201,7 @@ class AstrBotPlugin(star.Star):
                 AttentionPolicy(thresholds_from_config(self._c)),
                 AstrBotSignals(self.cache, self.buffer),
             )
-            if bool(self._c("attention_policy_enabled", True))
+            if bool(self._c("attention_policy_enabled", False))
             else None
         )
         runtime = AgentRuntime(
