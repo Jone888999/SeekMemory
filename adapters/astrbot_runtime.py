@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import datetime
 import time
+
+from .astrbot_time import utc8_timestamp
 
 try:
     from ..app.runtime.contracts import (
@@ -60,15 +61,7 @@ class AstrBotRuntimeAdapter:
     def source_event_time(source: dict | None) -> float:
         """Map a persisted Source timestamp to epoch seconds; unknown -> 0."""
         raw = str((source or {}).get("at") or "")
-        if not raw:
-            return 0.0
-        try:
-            value = datetime.datetime.fromisoformat(raw)
-            if value.tzinfo is None:
-                value = value.replace(tzinfo=datetime.timezone.utc)
-            return value.timestamp()
-        except (TypeError, ValueError):
-            return 0.0
+        return utc8_timestamp(raw)
 
     @staticmethod
     def event_id(event) -> str:
@@ -151,6 +144,12 @@ class AstrBotRuntimeAdapter:
     def bind_user(cls, event, receipt: UserRunReceipt) -> None:
         cls.set_extra(event, "_seekmemory_turn_id", receipt.turn_id)
         cls.set_extra(event, "_seekmemory_source_id", receipt.source_id)
+        cls.set_extra(event, "_seekmemory_read_through_seq", receipt.read_through_seq)
+
+    @classmethod
+    def read_through_seq(cls, event) -> int | None:
+        value = cls.get_extra(event, "_seekmemory_read_through_seq")
+        return value if type(value) is int and value >= 0 else None
 
     @classmethod
     def bind_reply(cls, event, reply: RecordedReply) -> None:
