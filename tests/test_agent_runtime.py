@@ -19,6 +19,7 @@ from app.runtime import (  # noqa: E402
     JsonStateStore,
     MemoryContext,
     MemoryContextRequest,
+    ProactiveDecision,
     RunContext,
     RuntimeInput,
     SessionState,
@@ -557,6 +558,52 @@ class WakePolicyTest(unittest.TestCase):
         self.assertEqual(state.unread_count, 1)
         self.assertGreater(state.wait_until, 100)
         self.assertEqual(state.next_retry_at, state.wait_until)
+
+    def test_proactive_dispatch_generates_sends_and_advances_state(self) -> None:
+        class Model:
+            async def complete(self, session_id, prompt, system_prompt=None):
+                return "proactive reply"
+
+        class Sender:
+            async def send(self, session_id, text):
+                return True
+
+        class Recorder:
+            def new_run_id(self):
+                return "proactive-run"
+
+            def record_deferred_reply(self, **kwargs):
+                self.reply = kwargs
+                return SimpleNamespace(response_chars=16, assistant_source_id="assistant-1")
+
+            def record_deferred_error(self, **kwargs):
+                raise AssertionError("must not fail")
+
+        store = InMemoryStateStore()
+        state = store.get("s1")
+        state.proactive_due_at = 100.0
+        store.put(state)
+        recorder = Recorder()
+        runtime = AgentRuntime(
+            store,
+            clock=lambda: 100,
+            model_gateway=Model(),
+            message_sender=Sender(),
+            recorder=recorder,
+        )
+        result = asyncio.run(
+            runtime.dispatch_proactive(
+                RunContext("s1", "memory prompt", event_time=90, received_at=100),
+                ProactiveDecision(True, "due"),
+                now=100,
+            )
+        )
+        self.assertTrue(result.delivered)
+        self.assertEqual(recorder.reply["decision"], "proactive")
+        state = store.get("s1")
+        self.assertEqual(state.proactive_attempts, 1)
+        self.assertEqual(state.proactive_due_at, 0.0)
+        self.assertEqual(state.last_action, "reply")
 
     def test_deferred_dispatch_rejects_not_due_state(self) -> None:
         class Model:

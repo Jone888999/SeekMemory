@@ -20,19 +20,28 @@ from ..app.runtime.attention import (
     quota_gate,
     thresholds_from_config,
 )
-from ..app.runtime.contracts import SessionState, WakeAction
+from ..app.runtime.contracts import RunDecision, SessionState, WakeAction
 from ..app.runtime.scene_hints import compose, time_window
 from ..app.runtime.signals import Signals
+from ..app.runtime.state import migrate_legacy_attention_quota
 from .astrbot_event import to_runtime_input
+from .astrbot_runtime import AstrBotRuntimeAdapter
+from .astrbot_signals import AstrBotSignals
 
 QUOTA_TTL = 900.0
-MAX_MEMORY_SCAN = 150
 
 
-def _bigrams(text: str) -> set[str]:
-    """字符二元组，足够做轻量相关度，不引入依赖。"""
-    raw = "".join(ch for ch in str(text or "") if ch.isalnum())
-    return {raw[i : i + 2] for i in range(len(raw) - 1)}
+class AttentionRuntimePolicy:
+    """Expose AttentionPolicy through the AgentRuntime policy seam."""
+
+    def __init__(self, policy: AttentionPolicy, signals_port: AstrBotSignals) -> None:
+        self.policy = policy
+        self.signals_port = signals_port
+
+    def evaluate(self, event, state: SessionState, now: float) -> RunDecision:
+        return self.policy.decide(
+            event, state, self.signals_port.signals(event, state, now), now
+        )
 
 
 class AttentionHooks:
@@ -67,66 +76,10 @@ class AttentionHooks:
             return ""
 
     # ---------------- 信号 ----------------
-    def _relationship(self, speaker: str) -> float:
-        """关于这个说话人的印象条数 → 0..1（6 条封顶）。"""
-        try:
-            count = 0
-            for art in self.cache.active("memory"):
-                if str(art.payload.get("level") or "") != "impression":
-                    continue
-                if speaker in (str(art.header.said_by or ""), str(art.header.subject_id or "")):
-                    count += 1
-            return min(1.0, count / 6.0)
-        except Exception:  # noqa: BLE001
-            return 0.0
-
-    def _relevance(self, text: str) -> float:
-        """消息与已有记忆的字符重合度 → 0..1（轻量、不调模型）。"""
-        query = _bigrams(text)
-        if not query:
-            return 0.0
-        best = 0.0
-        try:
-            arts = self.cache.active("memory")[:MAX_MEMORY_SCAN]
-        except Exception:  # noqa: BLE001
-            return 0.0
-        for art in arts:
-            body = str(art.payload.get("text") or "")
-            if not body:
-                continue
-            overlap = len(query & _bigrams(body)) / len(query)
-            if overlap > best:
-                best = overlap
-                if best >= 1.0:
-                    break
-        return min(1.0, best)
-
-    def _heat(self, session_id: str) -> float:
-        """最近 5 分钟该会话的缓冲条数 → 0..1（10 条封顶）。"""
-        try:
-            cutoff = time.time() - 300
-            recent = 0
-            for turn in self.buffer.items:
-                if str(turn.session_id) != session_id:
-                    continue
-                stamp = getattr(turn, "at", "")
-                try:
-                    recent += 1 if not stamp or float(stamp) >= cutoff else 0
-                except (TypeError, ValueError):
-                    recent += 1
-            return min(1.0, recent / 10.0)
-        except Exception:  # noqa: BLE001
-            return 0.0
-
     def _signals(self, mapped, state: SessionState) -> Signals:
-        now = time.time()
-        return Signals(
-            relationship=self._relationship(mapped.speaker_id),
-            relevance=self._relevance(mapped.text),
-            heat=self._heat(mapped.session_id),
-            recency=max(0.0, now - float(state.last_seen_at or 0.0)),
-            window=time_window(time.localtime().tm_hour),
-        )
+        if getattr(self, "_signals_port", None) is None:
+            self._signals_port = AstrBotSignals(self.cache, self.buffer)
+        return self._signals_port.signals(mapped, state, time.time())
 
     # ---------------- 额度 ----------------
     def _quota_for(self, signals: Signals, policy: AttentionPolicy) -> int:
@@ -145,8 +98,18 @@ class AttentionHooks:
         self, mapped, event: AstrMessageEvent, decision, signals, policy
     ) -> bool:
         """返回是否放行；额度按 (会话, 说话人) 复用 SessionState。"""
-        state = self.services.runtime.store.get(self._quota_key(mapped))
-        remaining = int(state.unread_count or 0)
+        now = time.time()
+        store = self.services.runtime.store
+        key = self._quota_key(mapped)
+        state = store.get(key)
+        migrate_legacy_attention_quota(
+            state, legacy_quota_record=("#" in key)
+        )
+        reset_at = float(state.attention_quota_reset_at or 0.0)
+        if reset_at > 0.0 and reset_at <= now:
+            state.attention_quota = 0
+            state.attention_quota_reset_at = 0.0
+        remaining = int(state.attention_quota or 0)
         result = quota_gate(
             action=decision.action,
             private=mapped.private,
@@ -157,7 +120,11 @@ class AttentionHooks:
             quota=self._quota_for(signals, policy),
         )
         if result.remaining != remaining or mapped.mentioned or mapped.addressed:
-            self._save_quota(mapped, result.remaining)
+            state.attention_quota = max(0, int(result.remaining))
+            if mapped.mentioned or mapped.addressed:
+                state.attention_quota_reset_at = now + QUOTA_TTL
+            state.last_seen_at = now
+            store.put(state)
         return result.allow
 
     def _quota_key(self, mapped) -> str:
@@ -168,11 +135,23 @@ class AttentionHooks:
             store = self.services.runtime.store
             key = self._quota_key(mapped)
             state = store.get(key)
-            state.unread_count = int(remaining)
+            state.attention_quota = max(0, int(remaining))
             state.last_seen_at = time.time()
             store.put(state)
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"[seekmemory] 额度记录失败：{type(exc).__name__}")
+
+    def _runtime_decision(self, event, mapped, now: float):
+        cached = AstrBotRuntimeAdapter.get_extra(
+            event, "_seekmemory_attention_decision", None
+        )
+        if isinstance(cached, RunDecision):
+            return cached
+        decision = self.services.runtime.observe(mapped, now=now)
+        AstrBotRuntimeAdapter.set_extra(
+            event, "_seekmemory_attention_decision", decision
+        )
+        return decision
 
     # ---------------- 钩子 ----------------
     async def attention_gate(self, event: AstrMessageEvent) -> None:
@@ -190,11 +169,12 @@ class AttentionHooks:
             )
             if not mapped.text:
                 return
+            now = time.time()
             store = self.services.runtime.store
+            decision = self._runtime_decision(event, mapped, now)
             state = store.get(mapped.session_id)
             signals = self._signals(mapped, state)
             policy = AttentionPolicy(thresholds_from_config(self._c))
-            decision = policy.decide(mapped, state, signals, time.time())
             allowed = self._gate_quota(mapped, event, decision, signals, policy)
             state.last_action = decision.action.value
             state.last_reason = decision.reason

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import types
@@ -39,6 +40,10 @@ import importlib  # noqa: E402
 AstrBotPlugin = importlib.import_module(
     f"{ROOT.name}.adapters.astrbot_plugin"
 ).AstrBotPlugin
+AstrBotHooks = importlib.import_module(
+    f"{ROOT.name}.adapters.astrbot_hooks"
+).AstrBotHooks
+ToolPolicy = importlib.import_module(f"{ROOT.name}.app.runtime").ToolPolicy
 
 
 class _Sources:
@@ -71,6 +76,73 @@ class RuntimePluginContextTest(unittest.TestCase):
         self.assertEqual(context.bot_id, "bot-1")
         self.assertEqual(context.event_time, 10.0)
         self.assertEqual(context.received_at, 123.5)
+
+
+class HostHookActionTest(unittest.TestCase):
+    def test_tool_hooks_use_action_ledger_without_payload(self):
+        class Ledger:
+            def __init__(self):
+                self.started = []
+                self.finished = []
+
+            def begin(self, **kwargs):
+                self.started.append(kwargs)
+                return SimpleNamespace(action_id="action-1")
+
+            def finish(self, record, status, **kwargs):
+                self.finished.append((record.action_id, status, kwargs))
+
+        class Tracer:
+            def run_id(self, event):
+                return "run-1"
+
+            def tool_begin(self, event, tool):
+                pass
+
+            def tool_end(self, event, tool):
+                pass
+
+        class Trace:
+            def record(self, *args, **kwargs):
+                pass
+
+        class Event:
+            unified_msg_origin = "umo:1"
+            extras = {}
+
+            def get_sender_id(self):
+                return "sender-1"
+
+            def get_extra(self, key, default=None):
+                return self.extras.get(key, default)
+
+            def set_extra(self, key, value):
+                self.extras[key] = value
+
+        hook = AstrBotHooks()
+        hook.ready = True
+        hook.services = SimpleNamespace(
+            access_service=SimpleNamespace(
+                may_observe=lambda session, sender: True,
+                may_recall=lambda session, sender: True,
+            )
+        )
+        hook.run_tracer = Tracer()
+        hook.trace = Trace()
+        hook.tool_policy = ToolPolicy(("memory_",))
+        hook.action_ledger = Ledger()
+        event = Event()
+        tool = SimpleNamespace(name="memory_search", id="call-1")
+        asyncio.run(hook.observe_tool(event, tool, {"query": "private"}))
+        self.assertEqual(len(hook.action_ledger.started), 1)
+        self.assertNotIn("private", str(hook.action_ledger.started[0]))
+        asyncio.run(
+            hook.observe_tool_result(
+                event, tool, {}, SimpleNamespace(status="ok")
+            )
+        )
+        self.assertEqual(len(hook.action_ledger.finished), 1)
+        self.assertEqual(hook.action_ledger.finished[0][1].value, "succeeded")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,8 @@ import time
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
+from ..app.runtime.contracts import ActionKind, ActionStatus
+from ..app.runtime.tools import tool_result_failed
 from ..perceive.calls import log_call
 from .astrbot_attention import AttentionHooks
 from .astrbot_runtime import AstrBotRuntimeAdapter
@@ -141,10 +143,17 @@ class AstrBotHooks:
                 owner_id=getattr(self, "_owner_id", lambda: "")(),
                 names=getattr(self, "_address_names", lambda: ())(),
             )
+            decision = AstrBotRuntimeAdapter.get_extra(
+                event, "_seekmemory_attention_decision", None
+            )
             receipt = self.services.runtime.accept_user(
                 runtime_input,
                 event_id=AstrBotRuntimeAdapter.event_id(event),
                 deferred=deferred,
+                decision=decision,
+            )
+            AstrBotRuntimeAdapter.set_extra(
+                event, "_seekmemory_attention_decision", receipt.decision
             )
             if self.buffer.save_error:
                 self.journal.record(
@@ -250,10 +259,61 @@ class AstrBotHooks:
         )
         self._maybe_prune_runtime_episodes()
 
+    def _tool_action_key(self, event, tool) -> str:
+        event_id = AstrBotRuntimeAdapter.event_id(event)
+        tool_name = str(getattr(tool, "name", tool) or "tool")
+        tool_id = str(
+            getattr(tool, "id", "")
+            or getattr(tool, "call_id", "")
+            or ""
+        )
+        return f"{event_id}:{tool_name}:{tool_id}"
+
+    def _begin_tool_action(self, event, tool, tool_args) -> None:
+        ledger = getattr(self, "action_ledger", None)
+        if ledger is None:
+            return
+        try:
+            attempts = getattr(self, "_action_attempts", None)
+            if attempts is None:
+                attempts = {}
+                self._action_attempts = attempts
+            key = self._tool_action_key(event, tool)
+            record = ledger.begin(
+                session_id=str(getattr(event, "unified_msg_origin", "") or ""),
+                run_id=self.run_tracer.run_id(event),
+                callback_key=key,
+                kind=ActionKind.TOOL_CALL,
+                at=time.time(),
+            )
+            attempts[key] = record
+        except Exception:  # noqa: BLE001 - audit failure must not break the run
+            pass
+
+    def _finish_tool_action(self, event, tool, tool_result) -> None:
+        ledger = getattr(self, "action_ledger", None)
+        attempts = getattr(self, "_action_attempts", {})
+        if ledger is None:
+            return
+        try:
+            key = self._tool_action_key(event, tool)
+            record = attempts.pop(key, None)
+            if record is None:
+                return
+            status = (
+                ActionStatus.FAILED
+                if tool_result_failed(tool_result)
+                else ActionStatus.SUCCEEDED
+            )
+            ledger.finish(record, status, at=time.time())
+        except Exception:  # noqa: BLE001
+            pass
+
     async def observe_tool(self, event, tool, tool_args) -> None:
         if not self._may_observe(event):
             return
         self.run_tracer.tool_begin(event, tool)
+        self._begin_tool_action(event, tool, tool_args)
         call = AstrBotRuntimeAdapter.observe_tool(
             event, tool, tool_args, self.tool_policy
         )
@@ -271,6 +331,7 @@ class AstrBotHooks:
         if not self._may_observe(event):
             return
         self.run_tracer.tool_end(event, tool)
+        self._finish_tool_action(event, tool, tool_result)
         name = str(getattr(tool, "name", tool) or "")
         self.trace.record(
             "tool",

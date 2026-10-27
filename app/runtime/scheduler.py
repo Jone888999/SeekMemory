@@ -9,7 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from .contracts import SessionState, SessionStateStore
+from .contracts import ProactivePolicy, SessionState, SessionStateStore
+from .proactive import ProactiveDispatchPlan, plan_proactive_dispatch
 
 
 @dataclass(frozen=True)
@@ -50,3 +51,22 @@ class Scheduler:
             except Exception:  # noqa: BLE001 - one broken session must not block others
                 continue
         return tuple(due)
+
+    def proactive_due(
+        self,
+        session_ids: Iterable[str],
+        now: float,
+        policy: ProactivePolicy,
+        *,
+        max_fanout: int = 5,
+    ) -> ProactiveDispatchPlan:
+        """Read-only proactive fan-out selection on the same scheduler."""
+        states: list[SessionState] = []
+        for session_id in session_ids:
+            try:
+                states.append(self.store.get(str(session_id)))
+            except Exception:  # noqa: BLE001 - one broken session must not block others
+                continue
+        return plan_proactive_dispatch(
+            states, policy, now=now, max_fanout=max_fanout
+        )

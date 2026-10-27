@@ -291,5 +291,10 @@
     "description": "叫这些名字也算叫她（逗号分隔）",
     "type": "string",
     "default": "大肥鱼,肥鱼"
+  },
+  "proactive_enabled": {
+    "description": "允许运行时主动发起已排期的会话（默认关闭）",
+    "type": "bool",
+    "default": false
   }
 }
