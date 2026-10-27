@@ -54,6 +54,16 @@ test('extended platform fields survive mapping and transport without adding host
   assert.equal(mapped.reply_to_me, true);
 });
 
+test('transport preserves an already mapped private input without deriving attention again', async () => {
+  const mapped = { ...runtimeInput({ ...request, privateChat: true, mentioned: false }), unread_count: 2, unread_seq: 9 };
+  assert.equal(mapped.private, true);
+  assert.equal(mapped.mentioned, true);
+  assert.equal(mapped.addressed, false);
+  const host = kernel();
+  await new RuntimeBridge(host).event('accept_user', 'owner', { input: mapped });
+  assert.deepEqual(host.calls[0].input, mapped);
+});
+
 test('legacy and mismatched services never receive runtime mutations', async () => {
   for (const [version, reason] of [[null, 'runtime_unsupported'], [2, 'runtime_contract_mismatch']]) {
     const host = kernel({ version });

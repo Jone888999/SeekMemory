@@ -70,10 +70,15 @@ function eventPayload(kind, data) {
     const input = data.input;
     if (!input || typeof input.session_id !== 'string' || !input.session_id || typeof input.text !== 'string') return null;
     if (input.kind !== undefined && input.kind !== 'message') return null;
-    payload.input = runtimeInput({ sessionId: input.session_id, value: input.text, speakerId: input.speaker_id,
-      privateChat: input.private, mentioned: input.mentioned, eventTime: input.event_time, receivedAt: input.received_at,
-      scene: input.scene, conversationId: input.conversation_id, threadId: input.thread_id, selfId: input.self_id,
-      role: input.role, addressed: input.addressed, replyToMe: input.reply_to_me, eventId: input.event_id });
+    const projected = runtimeInput({ sessionId: input.session_id, value: input.text, receivedAt: 0 });
+    for (const key of Object.keys(projected)) {
+      if (input[key] === undefined) continue;
+      if (typeof input[key] !== typeof projected[key]) return null;
+      if (typeof input[key] === 'number' && (!Number.isFinite(input[key]) || input[key] < 0)) return null;
+      if (['unread_count', 'unread_seq'].includes(key) && !cursor(input[key])) return null;
+      projected[key] = input[key];
+    }
+    payload.input = projected;
   } else if (typeof data.session_id !== 'string' || !data.session_id) return null;
   for (const field of ['event_id', 'run_id', 'session_id', 'text', 'speaker_id', 'turn_id', 'reply_to',
     'decision', 'reason', 'error', 'user_source_id', 'assistant_source_id', 'action_id']) {
