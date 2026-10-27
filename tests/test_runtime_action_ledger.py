@@ -211,6 +211,13 @@ class ActionLedgerTest(unittest.TestCase):
             row["reason"] for row in rows
         })
 
+    def test_episode_list_does_not_include_action_audit_rows(self) -> None:
+        attempted = self.begin("call-list")
+        self.ledger.finish(attempted, ActionStatus.SUCCEEDED, at=165.0)
+
+        self.assertEqual(self.repository.list("session-1"), [])
+        self.assertEqual(len(self.repository.list_actions("session-1")), 2)
+
     def test_pruning_bounds_action_history_with_existing_episode_retention(self) -> None:
         for index in range(4):
             attempted = self.begin(f"call-{index}")

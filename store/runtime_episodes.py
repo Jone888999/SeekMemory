@@ -146,13 +146,14 @@ class RuntimeEpisodeRepository(SqliteRepository):
         size = max(1, min(1000, int(limit)))
         if session_id:
             rows = self.conn.execute(
-                "SELECT * FROM runtime_episodes WHERE session_id = ? "
-                "ORDER BY at DESC, rowid DESC LIMIT ?",
+                "SELECT * FROM runtime_episodes WHERE action_id IS NULL "
+                "AND session_id = ? ORDER BY at DESC, rowid DESC LIMIT ?",
                 (str(session_id), size),
             ).fetchall()
         else:
             rows = self.conn.execute(
-                "SELECT * FROM runtime_episodes ORDER BY at DESC, rowid DESC LIMIT ?",
+                "SELECT * FROM runtime_episodes WHERE action_id IS NULL "
+                "ORDER BY at DESC, rowid DESC LIMIT ?",
                 (size,),
             ).fetchall()
         return [dict(row) for row in rows]
