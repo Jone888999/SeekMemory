@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 
 from .astrbot_time import utc8_timestamp
@@ -33,7 +34,8 @@ class AstrBotRuntimeAdapter:
 
     @staticmethod
     def from_event(event, text: str, umo: str, sender: str,
-                   unread_count: int = 0, unread_seq: int = 0) -> RuntimeInput:
+                   unread_count: int = 0, unread_seq: int = 0,
+                   received_at: float | None = None) -> RuntimeInput:
         try:
             private = bool(event.is_private_chat())
         except Exception:  # noqa: BLE001 - unknown host event defaults to group
@@ -43,6 +45,8 @@ class AstrBotRuntimeAdapter:
             created_at = float(getattr(event, "created_at", 0.0) or 0.0)
         except (TypeError, ValueError):
             created_at = 0.0
+        if not math.isfinite(created_at) or created_at < 0:
+            created_at = 0.0
         direct = bool(getattr(event, "is_at_or_wake_command", False))
         return RuntimeInput(
             session_id=str(umo or ""),
@@ -51,11 +55,15 @@ class AstrBotRuntimeAdapter:
             private=private,
             mentioned=private or direct,
             question=("?" in value or "\uff1f" in value),
-            unread_count=max(0, int(unread_count)),
-            unread_seq=max(0, int(unread_seq)),
+            unread_count=AstrBotRuntimeAdapter._count(unread_count),
+            unread_seq=AstrBotRuntimeAdapter._count(unread_seq),
             event_time=created_at,
-            received_at=time.time(),
+            received_at=time.time() if received_at is None else received_at,
         )
+
+    @staticmethod
+    def _count(value) -> int:
+        return value if type(value) is int and value >= 0 else 0
 
     @staticmethod
     def source_event_time(source: dict | None) -> float:

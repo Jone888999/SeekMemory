@@ -1,0 +1,27 @@
+{
+  "input": {
+    "session_id": "dsh-session-a", "text": "下周见？", "event_time": 10.0,
+    "received_at": 12.5, "speaker_id": "local:single:owner", "private": false,
+    "mentioned": true, "question": true, "unread_count": 0, "unread_seq": 0
+  },
+  "receipt": {
+    "decision": {"action": "reply", "reason": "direct_attention", "attention": "direct", "must_reply": true},
+    "source_id": "user-source-1", "turn_id": "turn-1", "read_through_seq": 7
+  },
+  "context_request": {
+    "session_id": "dsh-session-a", "query": "下周见？", "source_id": "user-source-1",
+    "speaker_id": "local:single:owner", "private": false, "event_time": 10.0,
+    "received_at": 12.5, "now": 13.0, "reason": "inbound"
+  },
+  "context": {"text": "<relevant-memories>下周讨论出行计划</relevant-memories>", "info": {"final_ids": ["memory-1"]}},
+  "action_request": {"session_id": "dsh-session-a", "kind": "send_text", "text": "你好"},
+  "action_result": {"ok": false, "reason": "unsupported_action"},
+  "reply": {
+    "run_id": "run-1", "session_id": "dsh-session-a", "turn_id": "turn-1",
+    "assistant_source_id": "assistant-source-1", "response_chars": 2
+  },
+  "run_result": {
+    "run_id": "run-1", "session_id": "dsh-session-a", "delivered": true,
+    "assistant_source_id": "assistant-source-1", "response_chars": 2, "error": ""
+  }
+}

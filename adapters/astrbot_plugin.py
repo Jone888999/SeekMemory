@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import time
 from pathlib import Path
@@ -90,9 +92,22 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         self.capacity: CapacityGovernor | None = None
         self._last_runtime_prune_at = 0.0
         self._started = False
+        self._lifecycle_lock = asyncio.Lock()
+        self.actions = None
+        self.episode_recorder = None
         self.web = None
 
     async def start(self) -> None:
+        async with self._lifecycle_lock:
+            if self._started:
+                return
+            try:
+                await self._start()
+            except BaseException:
+                await self._finish_stop()
+                raise
+
+    async def _start(self) -> None:
         if self._started:
             return
         self.ready = False
@@ -127,6 +142,9 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         self.capacity = CapacityGovernor(self._thresholds(artifact_limit))
         self._last_runtime_prune_at = 0.0
         self._init_engine()
+        if not self.ready:
+            await self._stop()
+            return
         recall = RecallService(
             cache=self.cache,
             graph=self.graph,
@@ -276,9 +294,9 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             runtime=runtime,
             runtime_worker=runtime_worker,
         )
-        self._started = True
         self.web = WebRoutes(self)
         self.web.register()
+        self._started = True
 
     def _c(self, key: str, default):
         try:
@@ -358,8 +376,9 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
                 f"待抽取 {len(self.buffer.items)} 条"
             )
         except Exception as e:  # noqa: BLE001
+            self.ready = False
             self.journal.record("plugin", "failed", "记忆引擎初始化失败", error=e)
-            logger.error(f"[seekmemory] 初始化失败，记忆功能降级：{e}")
+            logger.error(f"[seekmemory] 初始化失败，记忆功能降级：{type(e).__name__}")
 
     def _runtime_memory_context(self, request: MemoryContextRequest) -> MemoryContext:
         block, info = self._recall_block(
@@ -388,24 +407,49 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         )
 
     async def stop(self) -> None:
-        if not self._started:
-            return
+        async with self._lifecycle_lock:
+            await self._finish_stop()
+
+    async def _finish_stop(self) -> None:
+        cleanup = asyncio.create_task(self._stop())
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            await cleanup
+            raise
+
+    async def _stop(self) -> None:
         self.ready = False
-        if self.services is not None:
-            await self.services.background_service.stop()
-        if self.jobs is not None:
-            await self.jobs.close()
-        if self.web is not None:
-            self.web.close()
-        if self.buffer is not None:
-            self.buffer.save()
-        if self.checkpoint is not None:
-            self.checkpoint.flush()
-        if self.store is not None:
-            self.store.close()
-            self.store = None
-        self.journal.record("plugin", "stopped", "plugin resources released")
+        operations = [
+            (self.services.background_service, "stop") if self.services else (None, "stop"),
+            (self.jobs, "close"), (self.web, "close"), (self.buffer, "save"),
+            (self.checkpoint, "flush"), (self.store, "close"),
+        ]
+        cancellation = None
+        for resource, method in operations:
+            if resource is None:
+                continue
+            try:
+                result = getattr(resource, method)()
+                if inspect.isawaitable(result):
+                    await result
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+            except Exception as exc:
+                if self.journal is not None:
+                    self.journal.record("plugin", "failed", "resource cleanup failed", error=exc)
+        if self.journal is not None and any(resource is not None for resource, _ in operations):
+            self.journal.record("plugin", "stopped", "plugin resources released")
+        for name in (
+            "services", "store", "cache", "tree", "graph", "hybrid_retriever",
+            "buffer", "checkpoint", "dream", "jobs", "web", "actions",
+            "episode_recorder", "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
+        ):
+            setattr(self, name, None)
+        self._self_id = ""
         self._started = False
+        if cancellation is not None:
+            raise cancellation
 
     def _reload_buffer(self) -> None:
         if self.buffer is not None:

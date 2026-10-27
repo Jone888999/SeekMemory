@@ -16,6 +16,7 @@ import { normalize } from './config.js';
 import { KernelClient } from './kernel-client.js';
 import { registerHostHooks } from './host-dsh.js';
 import { startExtractLoop } from './extract-bridge.js';
+import { RuntimeBridge } from './runtime-bridge.js';
 import { createFileLogger, resolveLogDir, errBrief } from './logger.js';
 import { evaluateBoot, markCrash, recoveryHint } from './safe-mode.js';
 import path from 'node:path';
@@ -34,6 +35,7 @@ let activeKernel = null;
 let activeStateDir = '';
 /** 本次进程是否观测到未捕获异常（= 非正常死亡）。 */
 let crashedByUncaught = false;
+const activeInstances = new WeakMap();
 
 /**
  * 退出诊断。
@@ -107,6 +109,7 @@ function configSummary(cfg) {
  * @param {Record<string, unknown>} rawConfig 宿主传入的插件配置
  */
 export function apply(ctx, rawConfig) {
+  if (activeInstances.has(ctx)) return;
   // ── 1. 先有日志，再谈别的 ───────────────────────────────
   // 关键：日志目录必须**在配置归一化之前**就定下来，否则"归一化之前的行"和
   // "之后的行"会落进两个文件——真崩时最后一行可能在不该看的那个里，等于白记。
@@ -194,16 +197,29 @@ export function apply(ctx, rawConfig) {
       logger?.warn?.(`探活异常（已吞掉）: ${errBrief(err)}`);
     });
 
-  let hooks;
+  const runtime = new RuntimeBridge(kernel);
+  const hooks = { disposers: [() => runtime.stop()] };
+  const dispose = () => {
+    for (const release of hooks.disposers.splice(0)) {
+      try { release(); } catch { /* host resources may already be disposed */ }
+    }
+    activeInstances.delete(ctx);
+    if (activeKernel === kernel) {
+      activeKernel = null;
+      activeBoot = null;
+      activeStateDir = '';
+    }
+  };
   try {
     logger?.info?.('开始注册钩子');
-    hooks = registerHostHooks({ ctx, config: cfg, kernel, logger });
+    registerHostHooks({ ctx, config: cfg, kernel, logger, runtime, disposers: hooks.disposers });
     logger?.info?.(`钩子注册完成，共 ${hooks.disposers.length} 个 disposer`);
 
     // M5：拉取式抽取循环（默认关）。它自己不抢资源，空闲 60s 一次 plan。
     const extract = startExtractLoop({ ctx, config: cfg, kernel, logger });
     hooks.disposers.push(() => extract.stop());
   } catch (err) {
+    dispose();
     logger?.error?.(`钩子注册失败，插件降级为不工作: ${errBrief(err)}`);
     logger?.error?.(`如反复失败，删除 boot.json 或设 SEEKMEMORY_DISABLE=1 可让宿主正常启动`);
     return; // **不 markOk**：下次启动会自动进安全模式
@@ -213,17 +229,13 @@ export function apply(ctx, rawConfig) {
   try {
     ctx.effect(() => () => {
       logger?.info?.('开始卸载');
-      for (const dispose of hooks.disposers.splice(0)) {
-        try {
-          dispose();
-        } catch {
-          /* agent 可能已先步销毁 */
-        }
-      }
+      dispose();
       logger?.info?.('已卸载，钩子全部回收');
     });
   } catch (err) {
+    dispose();
     logger?.warn?.(`生命周期注册失败（可能热重载残留）: ${errBrief(err)}`);
+    return;
   }
 
   // ── 6. 启动阶段完成：立刻清 pending ────────────────────
@@ -232,6 +244,7 @@ export function apply(ctx, rawConfig) {
   // 这样强杀（任务管理器、关窗口、断电）不会遗留 pending，也就不会误跳闸。
   activeBoot = boot;
   activeKernel = kernel;
+  activeInstances.set(ctx, dispose);
   boot.markOk();
   logger?.info?.(
     `已就绪 version=${VERSION} contract=${cfg.hostContract}（启动阶段已确认；运行期未捕获异常会写 crash.json，下次启动跳闸）`,

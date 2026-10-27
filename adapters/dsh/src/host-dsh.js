@@ -12,6 +12,7 @@
  */
 
 import { buildUserMessage } from './message.js';
+import { eventEpoch, runtimeInput } from './runtime-bridge.js';
 
 const PLUGIN_KIND = 'plugin:seekmemory';
 const PERSONA_TTL_MS = 60_000;
@@ -74,8 +75,10 @@ export function deriveSubjectKey(payload, config, logger, state) {
  * @param {{ ctx:any, config:any, kernel:any, logger:any }} deps
  * @returns {{ disposers: Function[] }}
  */
-export function registerHostHooks({ ctx, config, kernel, logger }) {
-  const disposers = [];
+export function registerHostHooks({ ctx, config, kernel, logger, runtime, disposers = [] }) {
+  let stopped = false;
+  const turns = new Map();
+  disposers.push(() => { stopped = true; turns.clear(); personas.clear(); });
   const state = { subjectWarned: false };
   // persona **按主体分槽**：单槽缓存会把 A 的画像注入到 B 的上下文里
   // （只查 TTL 不查 subject = 身份/隐私 bug，review #110 第 1 条）。
@@ -93,12 +96,13 @@ export function registerHostHooks({ ctx, config, kernel, logger }) {
   };
 
   const refreshPersona = async (subjectKey) => {
+    if (stopped) return;
     if (!config.injectPersona) return;
     const key = subjectKey || '';
     const cached = personas.get(key);
     if (cached && Date.now() - cached.fetchedAt < PERSONA_TTL_MS) return;
     const r = await kernel.persona(key);
-    if (!r.ok) return;
+    if (!r.ok || stopped) return;
     personas.set(key, {
       text: String(r.data?.text ?? ''),
       revision: Number(r.data?.revision ?? 0),
@@ -116,28 +120,49 @@ export function registerHostHooks({ ctx, config, kernel, logger }) {
   if (config.enabled) {
     const off = ctx.on('session/event', (session, event) => {
       try {
+        if (stopped) return;
         const type = event?.type;
         if (type !== 'user/message' && type !== 'assistant/message') return;
         const role = type === 'user/message' ? 'user' : 'assistant';
         const data = event.data ?? {};
         const text = textOf(data.content) || String(data.text ?? '');
         if (!text) return;
+        const eventTime = eventEpoch(event?.time);
         const payload = {
           subject_key: deriveSubjectKey({ agent: { session } }, config, logger, state),
           session: String(session?.id ?? ''),
           role,
           text,
-          at: new Date(event?.time ?? Date.now()).toISOString(),
+          at: eventTime > 0 ? new Date(eventTime * 1000).toISOString() : '',
           msg_id: String(data.id ?? ''),
         };
         // fire-and-forget：捕获失败不能拖慢对话。
         // **必须接 .catch()**：Node 22 下未处理的 rejection 会直接终止宿主进程。
-        void kernel
-          .capture(payload)
+        const input = runtimeInput({ sessionId: payload.session, value: text,
+          speakerId: payload.subject_key, privateChat: session?.meta?.private === true,
+          mentioned: data.mentioned === true, eventTime });
+        const key = JSON.stringify([payload.session, payload.msg_id]);
+        const capture = (async () => {
+          const r = await runtime.event(role === 'user' ? 'accept_user' : 'record_reply', payload.subject_key,
+            role === 'user' ? { input, event_id: payload.msg_id } : {
+              run_id: '', session_id: payload.session, text, speaker_id: 'assistant', turn_id: payload.msg_id,
+              reply_to: '', recall_ids: [],
+            });
+          if (stopped) return { ok: false, reason: 'runtime_stopped' };
+          // Once a runtime write was attempted, a timeout must not trigger a second capture.
+          if (!r.attempted && !['runtime_stopped', 'contract_mismatch'].includes(r.reason)) return kernel.capture(payload);
+          return r;
+        })();
+        if (role === 'user' && payload.msg_id) {
+          turns.delete(key);
+          turns.set(key, { capture, input });
+          if (turns.size > 128) turns.delete(turns.keys().next().value);
+        }
+        void capture
           .then((r) => {
             if (!r.ok) logCaptureFailure(r);
           })
-          .catch((err) => logger?.warn?.(`${config.logPrefix} 捕获异常（已吞掉）: ${err?.message ?? err}`));
+          .catch(() => logger?.warn?.(`${config.logPrefix} 捕获异常（已跳过）`));
       } catch (err) {
         logger?.warn?.(`${config.logPrefix} 捕获失败（跳过）: ${err?.message ?? err}`);
       }
@@ -150,6 +175,7 @@ export function registerHostHooks({ ctx, config, kernel, logger }) {
     const handler = async (payload, next) => {
       const decision = await next();
       try {
+        if (stopped) return decision;
         if (!decision || decision.kind === 'reject') return decision;
         const query = lastUserText(payload?.messages) || lastUserText(decision.messages);
         if (!query) return decision;
@@ -160,7 +186,25 @@ export function registerHostHooks({ ctx, config, kernel, logger }) {
           logger?.warn?.(`${config.logPrefix} 人格刷新异常（已吞掉）: ${err?.message ?? err}`),
         );
 
-        const r = await kernel.recall({ query, subjectKey: sk });
+        const session = payload?.agent?.session;
+        const messages = payload?.messages ?? decision.messages ?? [];
+        const userMessage = [...messages].reverse().find((m) => m?.role === 'user' && (!m.source?.kind || m.source.kind === 'user'));
+        const key = JSON.stringify([String(session?.id ?? ''), String(userMessage?.id ?? '')]);
+        const turn = turns.get(key);
+        const accepted = await turn?.capture;
+        if (stopped) return decision;
+        const mapped = runtime.applyDecision(decision, accepted?.ok ? accepted.data : null);
+        if (mapped?.kind === 'reject') return mapped;
+        const context = await runtime.context(sk, {
+          sessionId: String(session?.id ?? ''), value: query, speakerId: sk,
+          privateChat: session?.meta?.private === true,
+          sourceId: accepted?.ok ? accepted.data?.source_id : '',
+          eventTime: turn?.input.event_time, receivedAt: turn?.input.received_at,
+        });
+        if (stopped) return decision;
+        const r = context.ok ? { ok: true, data: { block: context.data.text } }
+          : await kernel.recall({ query, subjectKey: sk });
+        if (stopped) return decision;
         if (!r.ok) {
           logger?.warn?.(`${config.logPrefix} 召回跳过（${r.reason}）`);
           return decision;
@@ -176,6 +220,7 @@ export function registerHostHooks({ ctx, config, kernel, logger }) {
           logger,
           envelope: false,
         });
+        if (stopped) return decision;
         // 展开 decision：只替换 messages，保留宿主塞进来的 usage / stepId 等字段
         // （原实现 new 一个 {kind,messages}，把这些字段丢了）
         return { ...decision, kind: 'enter', messages: [injection, ...(decision.messages ?? [])] };
@@ -192,6 +237,7 @@ export function registerHostHooks({ ctx, config, kernel, logger }) {
   if (config.enabled && config.injectPersona) {
     const registered = new WeakSet();
     const registerFor = (agent) => {
+      if (stopped) return;
       if (!agent || registered.has(agent)) return;
       registered.add(agent);
       // 把上下文**绑定到该 agent 自己的主体键**：读的是 personas.get(自己的 key)，
@@ -219,6 +265,7 @@ export function registerHostHooks({ ctx, config, kernel, logger }) {
 
     const off = ctx.on('agent/created', async (payload) => {
       try {
+        if (stopped) return;
         const agent = payload?.agent;
         registerFor(agent);
         await refreshPersona(deriveSubjectKey(payload, config, logger, state));

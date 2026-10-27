@@ -40,6 +40,7 @@ LAYERS: dict[str, tuple[str, ...]] = {
     "contract": (
         "test_api_contract.py",
         "test_public_interfaces.py",
+        "test_runtime_host_contract.py",
     ),
     # Host-port conformance: 任何宿主实现都必须通过（见 app/ports.py）。
     "conformance": (

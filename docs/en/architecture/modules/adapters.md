@@ -10,6 +10,8 @@ On start, AstrBotPlugin builds Store, Cache, Tree, Graph, HybridRetriever, Sourc
 
 main.py defines the plugin entry point and delegates lifecycle; composition and wiring live in adapters/astrbot_plugin.py. AstrBotHooks in adapters/astrbot_hooks.py maps host hooks to service calls: access decisions, input acceptance, memory injection, assistant-reply capture, post-send delivery recording, and runtime/tool observation. It does not implement extraction, capacity, or maintenance algorithms.
 
+Start and stop share a lifecycle lock. Partial initialization releases resources already created. Shutdown waits for background and management tasks before saving buffers, flushing checkpoints, and closing storage, then clears services, workers, caches, and host references. Cancellation waits for cleanup before propagating, allowing a safe restart.
+
 ## Port adapters
 
 - AstrBotRuntimeAdapter converts host messages into RuntimeInput and manages event-extra values for user/reply Source IDs, turn IDs, final recall IDs, and episode deduplication.
@@ -31,3 +33,13 @@ AccessService uses full session UMO, sender ID, owner/trusted configuration, and
 ## Current boundaries
 
 Hook registration must use the real plugin module path, so callbacks stay discoverable after reload. Runtime tool filtering runs before a model request; a tool observation hook after invocation is not enforcement. Host API limitations and plugin startup failures are handled at the outer boundary and must not leak AstrBot dependencies into business modules.
+
+## DSH runtime bridge
+
+DSH RuntimeBridge reuses KernelClient's authenticated loopback connection. After healthz advertises runtime_contract: 1, POST /runtime/events carries inputs, replies, deliveries, errors, and action execution results; POST /runtime/context obtains MemoryContext. app/runtime/contracts.py owns the public fields, and Python and Node both validate shared nonempty examples. Known millisecond or offset-aware event times map to epoch seconds; unknown time is 0 without guessing a historical timezone.
+
+subject_key identifies stable memory ownership, while session_id identifies the runtime conversation. Pre-step uses a Source receipt and event time only when the message ID matches. Only an explicit server runtime_gate_enabled enables mapping its RunDecision to host admission or rejection; the bridge has no separate attention policy.
+
+Legacy or unsupported runtime services retain capture/recall. Once a runtime write is attempted, failure or timeout never triggers a legacy capture, preventing duplicate writes. An ordinary assistant/message maps only to record_reply; without confirmed delivery it does not call record_delivery. The bridge adds no model loop, scheduler, proactive sender, or tool execution. The action audit sink still depends on #117.
+
+Each DSH host context registers once. Unload removes hooks, aborts bridge requests, and clears context caches; late responses cannot inject. Only the client and mock protocol are available today. The repository has no real Python loopback server entry point, so this is not real-server integration evidence.
