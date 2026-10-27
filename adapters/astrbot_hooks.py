@@ -84,7 +84,8 @@ class AstrBotHooks:
                 )
             runtime_input = AstrBotRuntimeAdapter.from_event(
                 event, text, umo, str(event.get_sender_id()),
-                owner_id=self._owner_id(), names=self._address_names(),
+                owner_id=getattr(self, "_owner_id", lambda: "")(),
+                names=getattr(self, "_address_names", lambda: ())(),
             )
             context = self.services.runtime.build_context(runtime_input)
             block, info = context.text, context.info
@@ -137,7 +138,8 @@ class AstrBotHooks:
                 text,
                 umo,
                 sender,
-                owner_id=self._owner_id(), names=self._address_names(),
+                owner_id=getattr(self, "_owner_id", lambda: "")(),
+                names=getattr(self, "_address_names", lambda: ())(),
             )
             receipt = self.services.runtime.accept_user(
                 runtime_input,
