@@ -12,6 +12,7 @@ from .contracts import (
     MemoryContextPort,
     MemoryContextRequest,
     MessageSender,
+    ProactiveDecision,
     ModelGateway,
     RunContext,
     RunDecision,
@@ -139,6 +140,7 @@ class AgentRuntime:
         event_id: str = "",
         deferred: bool = False,
         now: float | None = None,
+        decision: RunDecision | None = None,
     ) -> UserRunReceipt:
         """Record one user turn, then evaluate the run decision.
 
@@ -164,7 +166,8 @@ class AgentRuntime:
                 at=at,
                 deferred=deferred,
             )
-        decision = self.observe(event, now=now)
+        if decision is None:
+            decision = self.observe(event, now=now)
         return UserRunReceipt(
             decision=decision,
             source_id=recorded.source_id if recorded is not None else "",
@@ -383,6 +386,94 @@ class AgentRuntime:
                 "deferred_delivered",
                 {"chars": recorded.response_chars, "attempt": attempts},
             )
+        return RunResult(
+            run_id,
+            session_id,
+            True,
+            assistant_source_id=recorded.assistant_source_id,
+            response_chars=recorded.response_chars,
+        )
+
+    async def dispatch_proactive(
+        self,
+        context: RunContext,
+        decision: ProactiveDecision,
+        *,
+        now: float | None = None,
+    ) -> RunResult:
+        """Generate, send and record one due proactive turn."""
+        moment = self.clock() if now is None else float(now)
+        session_id = str(context.session_id or "")
+        run_id = str(context.run_id or "")
+        if not decision.should_speak:
+            return RunResult(run_id, session_id, False, error="not_due")
+        if self.model_gateway is None or self.message_sender is None:
+            return RunResult(run_id, session_id, False, error="runtime_port_missing")
+        if self.recorder is None:
+            return RunResult(run_id, session_id, False, error="recorder_missing")
+        if not run_id:
+            run_id = self.recorder.new_run_id()
+        runtime_input = RuntimeInput(
+            session_id=session_id,
+            text=context.text,
+            event_time=context.event_time,
+            received_at=context.received_at,
+        )
+        try:
+            memory = self.build_context(runtime_input, now=moment, reason="proactive")
+            reply = await self.model_gateway.complete(
+                session_id, memory.text or context.text, None
+            )
+            if not str(reply or "").strip():
+                raise RuntimeError("empty_response")
+            sent = await self.message_sender.send(session_id, reply)
+            if sent is False:
+                raise RuntimeError("send_failed")
+        except (Exception, asyncio.CancelledError) as exc:
+            state = self.store.get(session_id)
+            state.last_proactive_at = moment
+            state.proactive_attempts = int(state.proactive_attempts or 0) + 1
+            state.last_action = "wait"
+            state.last_reason = decision.reason
+            self._save(state)
+            at = datetime.datetime.fromtimestamp(
+                moment, datetime.timezone.utc
+            ).isoformat(timespec="seconds")
+            try:
+                self.recorder.record_deferred_error(
+                    run_id=run_id,
+                    session_id=session_id,
+                    user_source_id=context.source_id,
+                    error=exc,
+                    decision="proactive",
+                    reason=decision.reason,
+                    at=at,
+                )
+            finally:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise exc
+            return RunResult(run_id, session_id, False, error=type(exc).__name__)
+
+        at = datetime.datetime.fromtimestamp(
+            moment, datetime.timezone.utc
+        ).isoformat(timespec="seconds")
+        recorded = self.recorder.record_deferred_reply(
+            run_id=run_id,
+            session_id=session_id,
+            text=reply,
+            speaker_id=str(context.bot_id or "bot"),
+            user_source_id=context.source_id,
+            decision="proactive",
+            reason=decision.reason,
+            at=at,
+        )
+        state = self.store.get(session_id)
+        state.last_proactive_at = moment
+        state.proactive_attempts = int(state.proactive_attempts or 0) + 1
+        state.proactive_due_at = 0.0
+        state.last_action = "reply"
+        state.last_reason = decision.reason
+        self._save(state)
         return RunResult(
             run_id,
             session_id,

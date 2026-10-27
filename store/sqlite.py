@@ -108,12 +108,54 @@ class SqliteDatabase:
                     "ALTER TABLE runtime_episodes "
                     "ADD COLUMN run_id TEXT NOT NULL DEFAULT ''"
                 )
+            for name, definition in (
+                ("action_id", "TEXT"),
+                ("action_kind", "TEXT NOT NULL DEFAULT ''"),
+                ("action_status", "TEXT NOT NULL DEFAULT ''"),
+                ("attempt", "INTEGER NOT NULL DEFAULT 1"),
+            ):
+                if episode_cols and name not in episode_cols:
+                    self.conn.execute(
+                        f"ALTER TABLE runtime_episodes ADD COLUMN {name} {definition}"
+                    )
             self.conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_nodes_subject ON nodes(subject_id)"
             )
+            # Action events can share the run link with their episode; normal
+            # episode rows retain their existing one-row-per-run guarantee.
+            run_index = self.conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' "
+                "AND name = 'idx_runtime_episodes_run'"
+            ).fetchone()
+            if (
+                run_index is not None
+                and "action_id is null" not in str(run_index[0]).lower()
+            ):
+                self.conn.execute("DROP INDEX idx_runtime_episodes_run")
             self.conn.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_episodes_run "
-                "ON runtime_episodes(run_id) WHERE run_id <> ''"
+                "ON runtime_episodes(run_id) "
+                "WHERE run_id <> '' AND action_id IS NULL"
+            )
+            self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_runtime_episodes_action "
+                "ON runtime_episodes(action_id, attempt) WHERE action_id IS NOT NULL"
+            )
+            self.conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_episodes_action_terminal "
+                "ON runtime_episodes(action_id) "
+                "WHERE action_id IS NOT NULL AND action_status IN "
+                "('succeeded', 'failed', 'cancelled')"
+            )
+            self.conn.execute(
+                "CREATE TRIGGER IF NOT EXISTS trg_runtime_action_no_attempt_after_terminal "
+                "BEFORE INSERT ON runtime_episodes "
+                "WHEN NEW.action_id IS NOT NULL "
+                "AND NEW.action_status = 'attempted' "
+                "AND EXISTS (SELECT 1 FROM runtime_episodes "
+                "WHERE action_id = NEW.action_id AND action_status IN "
+                "('succeeded', 'failed', 'cancelled')) "
+                "BEGIN SELECT RAISE(IGNORE); END"
             )
 
     def close(self) -> None:

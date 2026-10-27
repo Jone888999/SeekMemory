@@ -23,6 +23,9 @@ from ..app.runtime import (
     JsonlEpisodeStore,
     MemoryContext,
     MemoryContextRequest,
+    ActionLedger,
+    DefaultProactivePolicy,
+    RepoActionSink,
     RunContext,
     RuntimeWorker,
     Scheduler,
@@ -56,7 +59,13 @@ from ..webui.jobs import Jobs
 from ..webui.journal import Journal
 from ..webui.routes import WebRoutes
 from ..webui.trace import Trace
-from .astrbot_attention import AttentionHooks
+from .astrbot_attention import (
+    AttentionHooks,
+    AttentionPolicy,
+    AttentionRuntimePolicy,
+    thresholds_from_config,
+)
+from .astrbot_signals import AstrBotSignals
 from .astrbot_hooks import AstrBotHooks
 from .astrbot_runtime import AstrBotRuntimeAdapter
 from .astrbot_time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
@@ -95,6 +104,7 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         self._lifecycle_lock = asyncio.Lock()
         self.actions = None
         self.episode_recorder = None
+        self.action_ledger = None
         self.web = None
 
     async def start(self) -> None:
@@ -173,6 +183,10 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             self.episode_recorder = EpisodeRecorder(
                 JsonlEpisodeStore(str(self.data_path.parent / "runtime_episodes.jsonl"))
             )
+        self.action_ledger = (
+            ActionLedger(RepoActionSink(self.store.runtime_episodes))
+            if self.store is not None else None
+        )
         recorder = AstrBotRunRecorder(
             sources=self.store.sources if self.store is not None else None,
             buffer=self.buffer,
@@ -180,8 +194,17 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             episodes=self.episode_recorder,
             cache=self.cache,
         )
+        attention_policy = (
+            AttentionRuntimePolicy(
+                AttentionPolicy(thresholds_from_config(self._c)),
+                AstrBotSignals(self.cache, self.buffer),
+            )
+            if bool(self._c("attention_policy_enabled", True))
+            else None
+        )
         runtime = AgentRuntime(
             state_store,
+            policy=attention_policy,
             trace=self.trace,
             clock=time.time,
             memory_context=SeekMemoryContextAdapter(self._runtime_memory_context),
@@ -261,6 +284,9 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             base_seconds=lambda: float(self._c("runtime_dispatch_backoff_seconds", 2)),
             trace=self.trace,
             clock=time.time,
+            proactive_policy=DefaultProactivePolicy(
+                enabled=bool(self._c("proactive_enabled", False))
+            ),
         )
         background = BackgroundService(
             jobs=self.jobs,
@@ -443,7 +469,7 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         for name in (
             "services", "store", "cache", "tree", "graph", "hybrid_retriever",
             "buffer", "checkpoint", "dream", "jobs", "web", "actions",
-            "episode_recorder", "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
+            "episode_recorder", "action_ledger", "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
         ):
             setattr(self, name, None)
         self._self_id = ""
