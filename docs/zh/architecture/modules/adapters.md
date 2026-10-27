@@ -14,7 +14,7 @@ main.py 定义插件入口并委托 lifecycle；组合和 wiring 位于 adapters
 
 ## 端口适配
 
-- AstrBotRuntimeAdapter 将消息转成 RuntimeInput，并管理宿主 event extra 中的 user/reply Source ID、turn ID、final recall IDs 和 episode 去重标记。
+- AstrBotRuntimeAdapter 复用 astrbot_event.to_runtime_input 转换消息，保留 scene、role、addressed、线程与消息 ID 等已有字段，并管理宿主 event extra 中的 user/reply Source ID、turn ID、final recall IDs 和 episode 去重标记。事件发生时间与进程接收时间分别记录。
 - AstrBotModelGateway 提供延迟回复使用的 ModelGateway。
 - AstrBotActionPort 同时提供 ActionPort 和 MessageSender：execute 接收 ActionRequest 并返回 ActionResult，既有 send 接口委托 execute 后返回布尔值。
 - ProviderChatModel 将宿主 extraction/persona provider 包装为 ChatModel。

@@ -14,7 +14,7 @@ Start and stop share a lifecycle lock. Partial initialization releases resources
 
 ## Port adapters
 
-- AstrBotRuntimeAdapter converts host messages into RuntimeInput and manages event-extra values for user/reply Source IDs, turn IDs, final recall IDs, and episode deduplication.
+- AstrBotRuntimeAdapter reuses astrbot_event.to_runtime_input, preserving existing scene, role, addressed, thread, and message-ID fields, and manages event-extra values for user/reply Source IDs, turn IDs, final recall IDs, and episode deduplication. Event time and process receipt time are recorded separately.
 - AstrBotModelGateway provides ModelGateway for deferred replies.
 - AstrBotActionPort provides both ActionPort and MessageSender: execute accepts ActionRequest and returns ActionResult; the existing send method delegates to execute and returns a boolean.
 - ProviderChatModel wraps a host extraction/persona provider as ChatModel.

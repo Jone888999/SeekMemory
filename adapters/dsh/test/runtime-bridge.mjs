@@ -6,7 +6,7 @@ import { RuntimeBridge, eventEpoch, runtimeInput } from '../src/runtime-bridge.j
 const fixture = JSON.parse(readFileSync(new URL('../../../tests/fixtures/runtime_host.json', import.meta.url), 'utf8'));
 const input = fixture.input;
 const request = { sessionId: input.session_id, value: input.text, speakerId: input.speaker_id,
-  mentioned: true, eventTime: input.event_time, receivedAt: input.received_at };
+  mentioned: true, eventTime: input.event_time, receivedAt: input.received_at, eventId: input.event_id };
 
 function kernel({ version = 1, gate = false, receipt = fixture.receipt } = {}) {
   const calls = [];
@@ -40,6 +40,18 @@ test('receipt and context preserve identities, times and cursor without host ext
   assert.deepEqual(context.data, fixture.context);
   assert.deepEqual(host.calls[1], { subject_key: 'owner', ...fixture.context_request });
   bridge.stop();
+});
+
+test('extended platform fields survive mapping and transport without adding host objects', async () => {
+  const mapped = runtimeInput({ ...request, scene: 'comment', conversationId: 'video-1',
+    threadId: 'comment-2', selfId: 'bot-1', role: 'owner', addressed: true, replyToMe: true });
+  const host = kernel();
+  await new RuntimeBridge(host).event('accept_user', 'owner', { input: mapped });
+  assert.deepEqual(host.calls[0].input, mapped);
+  assert.equal(mapped.scene, 'comment');
+  assert.equal(mapped.role, 'owner');
+  assert.equal(mapped.thread_id, 'comment-2');
+  assert.equal(mapped.reply_to_me, true);
 });
 
 test('legacy and mismatched services never receive runtime mutations', async () => {

@@ -28,13 +28,21 @@ export function eventEpoch(value) {
 }
 
 export function runtimeInput({ sessionId, value, speakerId = '', privateChat = false,
-  mentioned = false, eventTime = 0, receivedAt = Date.now() / 1000 }) {
+  mentioned = false, eventTime = 0, receivedAt = Date.now() / 1000, scene = 'group',
+  conversationId = '', threadId = '', selfId = '', role = 'member', addressed = false,
+  replyToMe = false, eventId = '' }) {
   const body = text(value);
+  const privateScene = privateChat === true || scene === 'private';
   return {
     session_id: text(sessionId), text: body, event_time: epoch(eventTime),
-    received_at: epoch(receivedAt), speaker_id: text(speakerId), private: privateChat === true,
-    mentioned: privateChat === true || mentioned === true, question: /[?？]/u.test(body),
+    received_at: epoch(receivedAt), speaker_id: text(speakerId), private: privateScene,
+    mentioned: privateScene || mentioned === true, question: /[?？]/u.test(body),
     unread_count: 0, unread_seq: 0,
+    scene: privateScene ? 'private' : ['group', 'channel', 'thread', 'comment'].includes(scene) ? scene : 'group',
+    conversation_id: text(conversationId), thread_id: text(threadId), self_id: text(selfId),
+    role: ['owner', 'admin', 'member', 'bot', 'system'].includes(role) ? role : 'member',
+    addressed: addressed === true || mentioned === true, reply_to_me: replyToMe === true,
+    event_id: text(eventId), kind: 'message',
   };
 }
 
@@ -61,8 +69,11 @@ function eventPayload(kind, data) {
   if (kind === 'accept_user') {
     const input = data.input;
     if (!input || typeof input.session_id !== 'string' || !input.session_id || typeof input.text !== 'string') return null;
+    if (input.kind !== undefined && input.kind !== 'message') return null;
     payload.input = runtimeInput({ sessionId: input.session_id, value: input.text, speakerId: input.speaker_id,
-      privateChat: input.private, mentioned: input.mentioned, eventTime: input.event_time, receivedAt: input.received_at });
+      privateChat: input.private, mentioned: input.mentioned, eventTime: input.event_time, receivedAt: input.received_at,
+      scene: input.scene, conversationId: input.conversation_id, threadId: input.thread_id, selfId: input.self_id,
+      role: input.role, addressed: input.addressed, replyToMe: input.reply_to_me, eventId: input.event_id });
   } else if (typeof data.session_id !== 'string' || !data.session_id) return null;
   for (const field of ['event_id', 'run_id', 'session_id', 'text', 'speaker_id', 'turn_id', 'reply_to',
     'decision', 'reason', 'error', 'user_source_id', 'assistant_source_id', 'action_id']) {

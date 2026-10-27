@@ -2,7 +2,9 @@
   "input": {
     "session_id": "dsh-session-a", "text": "下周见？", "event_time": 10.0,
     "received_at": 12.5, "speaker_id": "local:single:owner", "private": false,
-    "mentioned": true, "question": true, "unread_count": 0, "unread_seq": 0
+    "mentioned": true, "question": true, "unread_count": 0, "unread_seq": 0,
+    "scene": "group", "conversation_id": "", "thread_id": "", "self_id": "",
+    "role": "member", "addressed": true, "reply_to_me": false, "event_id": "event-1", "kind": "message"
   },
   "receipt": {
     "decision": {"action": "reply", "reason": "direct_attention", "attention": "direct", "must_reply": true},

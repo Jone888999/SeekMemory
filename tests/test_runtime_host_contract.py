@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
+from adapters.astrbot_event import to_runtime_input  # noqa: E402
 from app.runtime import (  # noqa: E402
     ActionRequest, ActionResult, MemoryContext, MemoryContextRequest, RunDecision,
     RunResult, RuntimeInput, UserRunReceipt,
@@ -38,12 +39,29 @@ class RuntimeHostContractTest(unittest.TestCase):
     def test_astrbot_maps_the_same_event_as_the_node_example(self):
         data = FIXTURE["input"]
         event = SimpleNamespace(created_at=data["event_time"], is_private_chat=lambda: False,
-                                is_at_or_wake_command=True)
+                                is_at_or_wake_command=True, message_id=data["event_id"])
         mapped = AstrBotRuntimeAdapter.from_event(
             event, data["text"], data["session_id"], data["speaker_id"],
             received_at=data["received_at"],
         )
         self.assertEqual(asdict(mapped), data)
+
+    def test_runtime_adapter_reuses_owner_scene_and_name_mapping(self):
+        event = SimpleNamespace(
+            message_str="大肥鱼在吗", sender_id="owner-1", group_id="group-1", self_id="bot-1",
+            message_obj=SimpleNamespace(message_id="event-2"), scene="thread", thread_id="thread-1",
+            reply_to_self=True, created_at=10, is_private_chat=lambda: False,
+        )
+        shared = to_runtime_input(event, session_id="session", owner_id="owner-1",
+                                  names=("大肥鱼",), received_at=12)
+        mapped = AstrBotRuntimeAdapter.from_event(
+            event, event.message_str, "session", "owner-1", owner_id="owner-1",
+            names=("大肥鱼",), received_at=12,
+        )
+        self.assertEqual(mapped, shared)
+        self.assertTrue(mapped.is_owner)
+        self.assertTrue(mapped.addressed)
+        self.assertEqual(mapped.event_id, "event-2")
 
     def test_malformed_host_times_and_counts_do_not_poison_runtime_state(self):
         for value in ("not-a-time", float("nan"), float("inf"), -1):

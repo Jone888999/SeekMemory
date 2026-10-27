@@ -144,7 +144,10 @@ export function registerHostHooks({ ctx, config, kernel, logger, runtime, dispos
         // **必须接 .catch()**：Node 22 下未处理的 rejection 会直接终止宿主进程。
         const input = runtimeInput({ sessionId: payload.session, value: text,
           speakerId: payload.subject_key, privateChat: session?.meta?.private === true,
-          mentioned: data.mentioned === true, eventTime });
+          mentioned: data.mentioned === true, eventTime, eventId: payload.msg_id,
+          scene: session?.meta?.scene, conversationId: session?.meta?.conversation_id,
+          threadId: session?.meta?.thread_id, selfId: session?.meta?.self_id,
+          role: data.role, addressed: data.addressed, replyToMe: data.reply_to_me });
         const key = JSON.stringify([payload.session, payload.msg_id]);
         const capture = (async () => {
           const r = await runtime.event(role === 'user' ? 'accept_user' : 'record_reply', payload.subject_key,
