@@ -22,6 +22,15 @@ from .runtime import AstrBotRuntimeAdapter
 class AstrBotHooks:
     """Host event mapping and delegation; owns no memory algorithms."""
 
+    def __init__(self, host=None) -> None:
+        self.host = host
+
+    def __getattr__(self, name):
+        host = self.__dict__.get("host")
+        if host is not None:
+            return getattr(host, name)
+        raise AttributeError(name)
+
     def _maybe_prune_runtime_episodes(self) -> None:
         """Keep runtime audit bounded without doing work on every message."""
         if self.store is None:
@@ -351,11 +360,13 @@ class AstrBotHooks:
         self.services.background_service.start()
 
 
-def _register(main_module: str, name: str, decorator, owner=AstrBotHooks):
-    function = getattr(owner, name)
-    function.__module__ = main_module
-    function.__qualname__ = f"Main.{name}"
-    return decorator(function)
+def _register(main_module: str, name: str, decorator, component: str = "hooks"):
+    async def handler(self, *args, **kwargs):
+        return await getattr(getattr(self, component), name)(*args, **kwargs)
+
+    handler.__module__ = main_module
+    handler.__qualname__ = f"Main.{name}"
+    return decorator(handler)
 
 
 def build_astrbot_hooks(main_module: str) -> dict:
@@ -394,10 +405,10 @@ def build_astrbot_hooks(main_module: str) -> dict:
             main_module,
             "attention_gate",
             filter.event_message_type(filter.EventMessageType.ALL, priority=9999),
-            owner=AttentionHooks,
+            component="attention",
         ),
         "inject_scene_hints": _register(
             main_module, "inject_scene_hints", filter.on_llm_request(),
-            owner=AttentionHooks,
+            component="attention",
         ),
     }

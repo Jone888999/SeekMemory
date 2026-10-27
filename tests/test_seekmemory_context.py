@@ -158,6 +158,8 @@ trace_store_module = importlib.import_module(f"{root.name}.store.run_trace")
 adapter_module = importlib.import_module(
     f"{root.name}.adapters.astrbot.context"
 )
+hooks_module = importlib.import_module(f"{root.name}.adapters.astrbot.hooks")
+attention_module = importlib.import_module(f"{root.name}.adapters.astrbot.attention")
 journal_module = importlib.import_module(f"{root.name}.webui.journal")
 
 
@@ -192,6 +194,8 @@ class FakeCapacity:
 class FakeMain(main_module.Main):
     def __init__(self, data_dir):
         self.ready = True
+        self.hooks = hooks_module.AstrBotHooks(self)
+        self.attention = attention_module.AttentionHooks(self)
         self.capacity_service = FakeCapacity()
         self.cache = object()
         self.data_path = Path(data_dir) / "memory.db"
@@ -210,6 +214,10 @@ class FakeMain(main_module.Main):
         self.services = SimpleNamespace(
             runtime=self.runtime,
             capacity_service=self.capacity_service,
+            access_service=SimpleNamespace(
+                may_recall=lambda session, sender: True,
+                may_observe=lambda session, sender: True,
+            ),
         )
 
     def _may_recall(self, event):

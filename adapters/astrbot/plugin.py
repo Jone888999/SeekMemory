@@ -70,7 +70,7 @@ from .hooks import AstrBotHooks
 from .runtime import AstrBotRuntimeAdapter
 from .time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
 
-class AstrBotPlugin(AttentionHooks, AstrBotHooks):
+class AstrBotPlugin(star.Star):
     """Composition root and lifecycle owner for the AstrBot host.
 
     Event handlers live in ``adapters.astrbot.hooks``. This class only builds
@@ -81,6 +81,8 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         super().__init__(context, config)
         self.context = context
         self.cfg = config or {}
+        self.hooks = AstrBotHooks(self)
+        self.attention = AttentionHooks(self)
         self.ready = False
         self.services: ServiceCollection | None = None
         self.store: Store | None = None

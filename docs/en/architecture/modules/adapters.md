@@ -8,7 +8,7 @@ adapters translates AstrBot events, providers, and message sending into applicat
 
 On start, AstrBotPlugin builds Store, Cache, Tree, Graph, HybridRetriever, Source-backed Buffer, CheckpointManager, application services, AgentRuntime, Jobs, WebRoutes, and background services. On stop, it stops background and management tasks, unregisters its own routes, saves the buffer, flushes checkpoints, and finally closes Store.
 
-main.py defines the plugin entry point and delegates lifecycle; composition and wiring live in adapters/astrbot/plugin.py. AstrBotHooks in adapters/astrbot/hooks.py maps host hooks to service calls: access decisions, input acceptance, memory injection, assistant-reply capture, post-send delivery recording, and runtime/tool observation. It does not implement extraction, capacity, or maintenance algorithms.
+main.py defines the plugin entry point and delegates lifecycle; composition and wiring live in adapters/astrbot/plugin.py. AstrBotPlugin explicitly owns hooks and attention components instead of sharing host state through multiple inheritance. AstrBotHooks in adapters/astrbot/hooks.py maps host hooks to service calls: access decisions, input acceptance, memory injection, assistant-reply capture, post-send delivery recording, and runtime/tool observation. It does not implement extraction, capacity, or maintenance algorithms.
 
 Start and stop share a lifecycle lock. Partial initialization releases resources already created. Shutdown waits for background and management tasks before saving buffers, flushing checkpoints, and closing storage, then clears services, workers, caches, and host references. Cancellation waits for cleanup before propagating, allowing a safe restart.
 

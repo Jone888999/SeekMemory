@@ -47,6 +47,15 @@ class AttentionRuntimePolicy:
 class AttentionHooks:
     """AstrBot 侧的策略胶水；不持有存储，全部走已有服务。"""
 
+    def __init__(self, host=None) -> None:
+        self.host = host
+
+    def __getattr__(self, name):
+        host = self.__dict__.get("host")
+        if host is not None:
+            return getattr(host, name)
+        raise AttributeError(name)
+
     # ---------------- 配置 ----------------
     def _attention_enabled(self) -> bool:
         try:
