@@ -2,7 +2,10 @@
 
 from .contracts import (
     ActionKind,
+    ActionPort,
     ActionRecord,
+    ActionRequest,
+    ActionResult,
     ActionSink,
     ActionStatus,
     AttentionLevel,
@@ -51,7 +54,10 @@ from .worker import RuntimeWorker
 
 __all__ = [
     "ActionKind",
+    "ActionPort",
     "ActionRecord",
+    "ActionRequest",
+    "ActionResult",
     "ActionSink",
     "ActionStatus",
     "AgentRuntime",

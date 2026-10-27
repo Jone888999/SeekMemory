@@ -11,6 +11,7 @@ app/runtime defines host-agnostic session state, attention decisions, and runtim
 - WakePolicy returns ignore, observe, wait, or reply. Private messages and direct mentions have high attention; explicit questions may reply directly; quiet/cooldown affects ambient traffic.
 - TimingPolicy is a pure wait/retry deadline policy. Scheduler reads persisted state and returns due runs; RuntimeWorker polls, deduplicates in-flight work, and dispatches without owning memory rules.
 - MemoryContextPort delegates to the existing RecallService through an adapter; Runtime does not implement a second memory retrieval path.
+- ActionPort accepts transient ActionRequest (session_id, kind, text) and returns ActionResult (ok, reason). MessageSender retains its boolean send interface; ActionRecord remains content-free audit metadata, and execution results do not decide audit terminal states.
 
 ## Two runtime paths
 

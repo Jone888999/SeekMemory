@@ -11,6 +11,7 @@ app/runtime 定义不依赖 AstrBot 的会话状态、注意力决策和运行�
 - WakePolicy 对输入给出 ignore、observe、wait、reply 之一。私聊和 @/直接提及是强注意力；明确问题可直接回复；quiet/cooldown 影响 ambient 流量。
 - TimingPolicy 是纯 wait/retry 截止时间策略。Scheduler 只读持久化状态并返回 due runs；RuntimeWorker 轮询、去重并分发，不拥有记忆规则。
 - MemoryContextPort 将运行时输入交给既有 RecallService；Runtime 本身不实现第二套记忆检索。
+- ActionPort 接收临时 ActionRequest（session_id、kind、text），返回 ActionResult（ok、reason）。MessageSender 的布尔发送接口保持兼容；ActionRecord 仍只保存无正文审计信息，执行结果不负责决定审计终态。
 
 ## 两条运行路径
 

@@ -14,9 +14,11 @@ main.py defines the plugin entry point and delegates lifecycle; composition and 
 
 - AstrBotRuntimeAdapter converts host messages into RuntimeInput and manages event-extra values for user/reply Source IDs, turn IDs, final recall IDs, and episode deduplication.
 - AstrBotModelGateway provides ModelGateway for deferred replies.
-- AstrBotActionPort provides MessageSender.
+- AstrBotActionPort provides both ActionPort and MessageSender: execute accepts ActionRequest and returns ActionResult; the existing send method delegates to execute and returns a boolean.
 - ProviderChatModel wraps a host extraction/persona provider as ChatModel.
 - SeekMemoryContextAdapter connects Runtime's MemoryContextPort to the existing RecallService.
+
+Action request text is transient execution input, never an ActionRecord audit field. Unsupported actions return unsupported_action; empty text, missing sessions, unavailable hosts, rejected sends, and execution errors have fixed reason codes. Host exception messages are not returned; cancellation propagates so runtime can recover. The adapter reports execution results without owning retries, audit deduplication, or terminal-state decisions.
 
 AstrBot centralizes time conversion in utc8_time_hook in astrbot_time.py. User messages, normal replies, deferred replies, and runtime audit pass through this adapter hook before calling the existing RunRecorder. New timestamps use ISO strings with an explicit +08:00 offset; kernel read views retain the existing naive format. Fields, kernel interfaces, and database structure are unchanged.
 

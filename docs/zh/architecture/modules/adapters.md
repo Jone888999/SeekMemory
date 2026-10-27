@@ -14,9 +14,11 @@ main.py 定义插件入口并委托 lifecycle；组合和 wiring 位于 adapters
 
 - AstrBotRuntimeAdapter 将消息转成 RuntimeInput，并管理宿主 event extra 中的 user/reply Source ID、turn ID、final recall IDs 和 episode 去重标记。
 - AstrBotModelGateway 提供延迟回复使用的 ModelGateway。
-- AstrBotActionPort 提供 MessageSender。
+- AstrBotActionPort 同时提供 ActionPort 和 MessageSender：execute 接收 ActionRequest 并返回 ActionResult，既有 send 接口委托 execute 后返回布尔值。
 - ProviderChatModel 将宿主 extraction/persona provider 包装为 ChatModel。
 - SeekMemoryContextAdapter 将 Runtime 的 MemoryContextPort 接到现有 RecallService。
+
+动作请求中的正文仅用于执行，不属于 ActionRecord 审计字段。不支持的动作返回 unsupported_action；空正文、缺少会话、宿主不可用、发送拒绝和执行异常分别返回固定原因码。宿主异常正文不会返回给调用方；取消继续向上传递，由运行时安排恢复。适配器只报告执行结果，不负责重试、动作审计去重或终态判定。
 
 AstrBot 的时间转换集中在 astrbot_time.py 的 utc8_time_hook：用户消息、普通回复、延迟回复和运行审计均在适配层经过同一钩子，再调用既有 RunRecorder。新写入时间采用带 +08:00 的 ISO 字符串，保留明确时区；内核读取视图仍采用原有的无时区格式。字段、内核接口和数据库结构不变。
 
