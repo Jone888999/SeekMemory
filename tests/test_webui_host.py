@@ -279,6 +279,25 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.plugin.store)
         self.assertIsNone(self.plugin.services)
 
+    async def test_late_host_callbacks_after_stop_are_ignored_without_stale_access(self) -> None:
+        event = PrivateEvent("remember this", "stopped-turn")
+        await self.restart_plugin(owner_umo=event.unified_msg_origin)
+        await self.plugin.buffer_message(event)
+        await self.plugin.terminate()
+        extras = dict(event.extras)
+        await self.plugin.observe_agent_begin(event, None)
+        await self.plugin.observe_agent_done(event, None, SimpleNamespace(role="err"))
+        await self.plugin.observe_tool(event, SimpleNamespace(name="memory_search"), {"query": "private"})
+        await self.plugin.observe_tool_result(event, SimpleNamespace(name="memory_search"), {}, "private result")
+        await self.plugin.buffer_message(event)
+        await self.plugin.capture_reply(event, SimpleNamespace(completion_text="late reply"))
+        await self.plugin.record_delivery(event)
+        self.assertEqual(event.extras, extras)
+        self.assertIsNone(self.plugin.services)
+        await self.plugin.initialize()
+        rows = self.plugin.store.sources.recent_sources(since="", limit=10)
+        self.assertEqual([row.role for row in rows], ["user"])
+
     async def test_failed_extraction_preserves_buffer(self) -> None:
         class Provider:
             async def text_chat(self, **_kwargs):

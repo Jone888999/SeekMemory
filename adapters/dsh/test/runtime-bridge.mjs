@@ -23,7 +23,11 @@ test('the same event maps to the complete Python RuntimeInput shape', () => {
   assert.equal(eventEpoch(10_000), 10);
   assert.equal(eventEpoch('1970-01-01T08:00:10+08:00'), 10);
   assert.equal(eventEpoch('1970-01-01T00:00:10Z'), 10);
-  for (const value of [undefined, '1970-01-01T00:00:10', 'bad', Infinity, -1]) assert.equal(eventEpoch(value), 0);
+  for (const value of [undefined, '1970-01-01T00:00:10', 'bad', Infinity, -1,
+    '2026-02-30T00:00:00Z', '2026-02-28T24:00:00+08:00', '2026-02-28T23:00:00+25:00']) {
+    assert.equal(eventEpoch(value), 0);
+  }
+  assert.equal(eventEpoch('1970-01-01T08:00:10.123456+08:00'), 10.123456);
 });
 
 test('receipt and context preserve identities, times and cursor without host extras', async () => {

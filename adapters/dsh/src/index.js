@@ -203,7 +203,7 @@ export function apply(ctx, rawConfig) {
     for (const release of hooks.disposers.splice(0)) {
       try { release(); } catch { /* host resources may already be disposed */ }
     }
-    activeInstances.delete(ctx);
+    if (activeInstances.get(ctx) === dispose) activeInstances.delete(ctx);
     if (activeKernel === kernel) {
       activeKernel = null;
       activeBoot = null;

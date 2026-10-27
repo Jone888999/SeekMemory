@@ -10,9 +10,21 @@ const cursor = (value) => Number.isSafeInteger(value) && value >= 0;
 /** DSH numeric event times are milliseconds; offset-free strings are unknown. */
 export function eventEpoch(value) {
   if (typeof value === 'number') return value <= 8.64e15 ? epoch(value) / 1000 : 0;
-  if (typeof value !== 'string' || !/(Z|[+-]\d{2}:\d{2})$/i.test(value)) return 0;
-  const millis = Date.parse(value);
-  return Number.isFinite(millis) ? epoch(millis) / 1000 : 0;
+  if (typeof value !== 'string') return 0;
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/i.exec(value);
+  if (!parts) return 0;
+  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(Number);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return 0;
+  const wall = new Date(0);
+  wall.setUTCFullYear(year, month - 1, day);
+  wall.setUTCHours(hour, minute, second, 0);
+  if (wall.getUTCFullYear() !== year || wall.getUTCMonth() !== month - 1 || wall.getUTCDate() !== day) return 0;
+  const zone = parts[8];
+  const [offsetHour, offsetMinute] = zone.toUpperCase() === 'Z' ? [0, 0] : zone.slice(1).split(':').map(Number);
+  if (offsetHour > 23 || offsetMinute > 59) return 0;
+  const offset = (offsetHour * 60 + offsetMinute) * (zone.startsWith('-') ? -1 : 1);
+  const fraction = parts[7] ? Number(`0.${parts[7]}`) : 0;
+  return epoch((wall.getTime() - offset * 60_000) / 1000 + fraction);
 }
 
 export function runtimeInput({ sessionId, value, speakerId = '', privateChat = false,

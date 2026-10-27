@@ -27,7 +27,8 @@ function host() {
   };
 }
 
-async function setup(t, { version = 1, runtimeStatus = 200, gate = false, contextWait } = {}) {
+async function setup(t, { version = 1, hostContract = 1, runtimeStatus = 200, gate = false,
+  contextWait, injectRecall = true } = {}) {
   const calls = [];
   const server = createServer(async (req, res) => {
     const route = new URL(req.url, 'http://127.0.0.1').pathname;
@@ -37,7 +38,7 @@ async function setup(t, { version = 1, runtimeStatus = 200, gate = false, contex
     calls.push({ route, body, auth: req.headers.authorization });
     let data = {};
     let status = 200;
-    if (route === '/healthz') data = { host_contract: 1, version: 'test',
+    if (route === '/healthz') data = { host_contract: hostContract, version: 'test',
       ...(version === null ? {} : { runtime_contract: version }), runtime_gate_enabled: gate };
     else if (route === '/runtime/events') {
       status = runtimeStatus;
@@ -56,7 +57,7 @@ async function setup(t, { version = 1, runtimeStatus = 200, gate = false, contex
   const runtimePath = path.join(dir, 'runtime.json');
   writeFileSync(runtimePath, JSON.stringify({ port: server.address().port, token: 'test-only-token' }));
   const ctx = host();
-  const config = { runtimePath, logDir: dir, stateDir: dir, injectPersona: false,
+  const config = { runtimePath, logDir: dir, stateDir: dir, injectPersona: false, injectRecall,
     subjectMode: 'fixed', subjectKey: fixture.input.speaker_id, captureTimeoutMs: 300, recallTimeoutMs: 500 };
   apply(ctx, config);
   t.after(async () => {
@@ -141,4 +142,44 @@ test('duplicate apply registers once; unloading prevents late injection and perm
   assert.equal(ctx.handlers.get('session/event').length, 0);
   apply(ctx, config);
   assert.equal(ctx.handlers.get('session/event').length, 1);
+});
+
+test('a repeated old disposer cannot remove the new instances registration marker', async (t) => {
+  const { ctx, config } = await setup(t);
+  const oldDispose = ctx.effects[0];
+  oldDispose();
+  apply(ctx, config);
+  oldDispose();
+  apply(ctx, config);
+  assert.equal(ctx.handlers.get('session/event').length, 1);
+  assert.equal(ctx.handlers.get('agent/pre-step').length, 1);
+});
+
+test('base contract mismatch never falls back to unverified memory injection', async (t) => {
+  const { ctx, calls } = await setup(t, { hostContract: 2 });
+  const turn = user(ctx);
+  const result = await ctx.handlers.get('agent/pre-step')[0](turn.payload, async () => turn.decision);
+  assert.strictEqual(result, turn.decision);
+  assert.equal(calls.some((call) => ['/capture', '/recall', '/runtime/context'].includes(call.route)), false);
+});
+
+test('fallback decision messages carry their own receipt and original event time', async (t) => {
+  const { ctx, calls } = await setup(t);
+  const turn = user(ctx);
+  turn.payload.messages = [];
+  const result = await ctx.handlers.get('agent/pre-step')[0](turn.payload, async () => turn.decision);
+  assert.equal(result.messages[0].content[0].text, fixture.context.text);
+  const input = calls.find((call) => call.body?.kind === 'accept_user').body.input;
+  const request = calls.find((call) => call.route === '/runtime/context').body;
+  assert.equal(request.source_id, fixture.receipt.source_id);
+  assert.equal(request.event_time, input.event_time);
+  assert.equal(request.received_at, input.received_at);
+});
+
+test('disabling memory injection does not disable the independent server runtime gate', async (t) => {
+  const { ctx, calls } = await setup(t, { gate: true, injectRecall: false });
+  const turn = user(ctx);
+  const result = await ctx.handlers.get('agent/pre-step')[0](turn.payload, async () => turn.decision);
+  assert.deepEqual(result, { ...turn.decision, kind: 'reject' });
+  assert.equal(calls.some((call) => ['/runtime/context', '/recall'].includes(call.route)), false);
 });

@@ -30,16 +30,20 @@ export function textOf(content) {
 
 /** 取最后一条真实用户消息的文本（跳过我们自己注入的）。 */
 export function lastUserText(messages) {
-  if (!Array.isArray(messages)) return '';
+  return textOf(lastUserMessage(messages)?.content);
+}
+
+function lastUserMessage(messages) {
+  if (!Array.isArray(messages)) return null;
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i];
     if (!m) continue;
     if (m.source?.kind && m.source.kind !== 'user') continue; // 注入消息/工具消息不算
     if (m.role !== 'user') continue;
     const text = textOf(m.content);
-    if (text) return text;
+    if (text) return m;
   }
-  return '';
+  return null;
 }
 
 /**
@@ -171,13 +175,14 @@ export function registerHostHooks({ ctx, config, kernel, logger, runtime, dispos
   }
 
   // ── 2. 每轮召回 ──────────────────────────────────────────
-  if (config.enabled && config.injectRecall) {
+  if (config.enabled) {
     const handler = async (payload, next) => {
       const decision = await next();
       try {
         if (stopped) return decision;
         if (!decision || decision.kind === 'reject') return decision;
-        const query = lastUserText(payload?.messages) || lastUserText(decision.messages);
+        const userMessage = lastUserMessage(payload?.messages) ?? lastUserMessage(decision.messages);
+        const query = textOf(userMessage?.content);
         if (!query) return decision;
 
         const sk = deriveSubjectKey(payload, config, logger, state);
@@ -187,14 +192,13 @@ export function registerHostHooks({ ctx, config, kernel, logger, runtime, dispos
         );
 
         const session = payload?.agent?.session;
-        const messages = payload?.messages ?? decision.messages ?? [];
-        const userMessage = [...messages].reverse().find((m) => m?.role === 'user' && (!m.source?.kind || m.source.kind === 'user'));
         const key = JSON.stringify([String(session?.id ?? ''), String(userMessage?.id ?? '')]);
         const turn = turns.get(key);
         const accepted = await turn?.capture;
         if (stopped) return decision;
         const mapped = runtime.applyDecision(decision, accepted?.ok ? accepted.data : null);
         if (mapped?.kind === 'reject') return mapped;
+        if (!config.injectRecall) return decision;
         const context = await runtime.context(sk, {
           sessionId: String(session?.id ?? ''), value: query, speakerId: sk,
           privateChat: session?.meta?.private === true,
@@ -203,7 +207,8 @@ export function registerHostHooks({ ctx, config, kernel, logger, runtime, dispos
         });
         if (stopped) return decision;
         const r = context.ok ? { ok: true, data: { block: context.data.text } }
-          : await kernel.recall({ query, subjectKey: sk });
+          : ['runtime_unsupported', 'runtime_contract_mismatch'].includes(context.reason)
+            ? await kernel.recall({ query, subjectKey: sk }) : context;
         if (stopped) return decision;
         if (!r.ok) {
           logger?.warn?.(`${config.logPrefix} 召回跳过（${r.reason}）`);
