@@ -10,7 +10,7 @@ from __future__ import annotations
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
-from ...app.runtime.contracts import ActionKind, ActionStatus
+from ...app.runtime.contracts import ActionKind, ActionRequest, ActionStatus
 from ...app.runtime.tools import tool_result_failed
 from ...perceive.calls import log_call
 from .attention import AttentionHooks
@@ -199,15 +199,18 @@ class AstrBotHooks:
             pass
 
     def _begin_send_action(self, event, session_id: str, run_id: str, turn_id: str) -> None:
-        ledger = getattr(self, "action_ledger", None)
-        if ledger is None:
+        executor = getattr(self, "action_executor", None)
+        if executor is None:
             return
         try:
-            record = ledger.begin(
-                session_id=session_id,
+            record = executor.begin(
+                ActionRequest(
+                    session_id=session_id,
+                    kind=ActionKind.SEND_TEXT,
+                    text="",
+                ),
                 run_id=run_id,
                 callback_key=f"send:{turn_id or run_id}",
-                kind=ActionKind.SEND_TEXT,
                 at=self.clock(),
             )
             AstrBotRuntimeAdapter.set_extra(
@@ -217,8 +220,8 @@ class AstrBotHooks:
             pass
 
     def _finish_send_action(self, event, status: ActionStatus, reason: str = "") -> None:
-        ledger = getattr(self, "action_ledger", None)
-        if ledger is None:
+        executor = getattr(self, "action_executor", None)
+        if executor is None:
             return
         try:
             record = AstrBotRuntimeAdapter.get_extra(
@@ -226,7 +229,7 @@ class AstrBotHooks:
             )
             if record is None:
                 return
-            ledger.finish(record, status, at=self.clock(), reason=reason)
+            executor.finish(record, status, at=self.clock(), reason=reason)
             AstrBotRuntimeAdapter.set_extra(event, "_seekmemory_send_action", None)
         except Exception:  # noqa: BLE001
             pass
@@ -333,8 +336,8 @@ class AstrBotHooks:
         return f"{event_id}:{tool_name}:{tool_id}"
 
     def _begin_tool_action(self, event, tool, tool_args) -> None:
-        ledger = getattr(self, "action_ledger", None)
-        if ledger is None:
+        executor = getattr(self, "action_executor", None)
+        if executor is None:
             return
         try:
             attempts = getattr(self, "_action_attempts", None)
@@ -342,11 +345,14 @@ class AstrBotHooks:
                 attempts = {}
                 self._action_attempts = attempts
             key = self._tool_action_key(event, tool)
-            record = ledger.begin(
-                session_id=str(getattr(event, "unified_msg_origin", "") or ""),
+            record = executor.begin(
+                ActionRequest(
+                    session_id=str(getattr(event, "unified_msg_origin", "") or ""),
+                    kind=ActionKind.TOOL_CALL,
+                    text=str(getattr(tool, "name", tool) or ""),
+                ),
                 run_id=self.run_tracer.run_id(event),
                 callback_key=key,
-                kind=ActionKind.TOOL_CALL,
                 at=self.clock(),
             )
             attempts[key] = record
@@ -354,9 +360,9 @@ class AstrBotHooks:
             pass
 
     def _finish_tool_action(self, event, tool, tool_result) -> None:
-        ledger = getattr(self, "action_ledger", None)
+        executor = getattr(self, "action_executor", None)
         attempts = getattr(self, "_action_attempts", {})
-        if ledger is None:
+        if executor is None:
             return
         try:
             key = self._tool_action_key(event, tool)
@@ -368,7 +374,7 @@ class AstrBotHooks:
                 if tool_result_failed(tool_result)
                 else ActionStatus.SUCCEEDED
             )
-            ledger.finish(record, status, at=self.clock())
+            executor.finish(record, status, at=self.clock())
         except Exception:  # noqa: BLE001
             pass
 

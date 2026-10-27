@@ -8,6 +8,8 @@ from dataclasses import replace
 from typing import Callable
 
 from .contracts import (
+    ActionKind,
+    ActionRequest,
     MemoryContext,
     MemoryContextPort,
     MemoryContextRequest,
@@ -25,6 +27,7 @@ from .contracts import (
     TraceSink,
     WakeAction,
 )
+from .actions import ActionExecutor
 from .recorder import RecordedReply, RunRecorder
 from .attention import DefaultAttentionPolicy
 from .topics import TopicCandidate
@@ -44,6 +47,7 @@ class AgentRuntime:
         memory_context: MemoryContextPort | None = None,
         wait_seconds: float = 0.0,
         model_gateway: ModelGateway | None = None,
+        action_executor: ActionExecutor | None = None,
         message_sender: MessageSender | None = None,
         recorder: RunRecorder | None = None,
     ) -> None:
@@ -54,6 +58,7 @@ class AgentRuntime:
         self.memory_context = memory_context
         self.wait_seconds = max(0.0, float(wait_seconds))
         self.model_gateway = model_gateway
+        self.action_executor = action_executor
         self.message_sender = message_sender
         self.recorder = recorder
 
@@ -82,6 +87,27 @@ class AgentRuntime:
     def _save(self, state: SessionState) -> None:
         state.revision = max(0, int(state.revision or 0)) + 1
         self.store.put(state)
+
+    async def _send_text(
+        self, session_id: str, text: str, *, run_id: str, callback_key: str
+    ) -> bool:
+        if self.action_executor is not None:
+            result = await self.action_executor.execute(
+                ActionRequest(
+                    session_id=session_id,
+                    kind=ActionKind.SEND_TEXT,
+                    text=text,
+                ),
+                run_id=run_id,
+                callback_key=callback_key,
+                at=self.clock(),
+            )
+            if not result.ok:
+                raise RuntimeError(result.reason or "send_failed")
+            return True
+        if self.message_sender is not None:
+            return bool(await self.message_sender.send(session_id, text))
+        raise RuntimeError("runtime_port_missing")
 
     def observe(
         self, event: RuntimeInput, *, now: float | None = None
@@ -305,7 +331,9 @@ class AgentRuntime:
         if not text:
             self.clear_wait(session_id, now)
             return RunResult(run_id, session_id, False, error="empty_source")
-        if self.model_gateway is None or self.message_sender is None:
+        if self.model_gateway is None or (
+            self.action_executor is None and self.message_sender is None
+        ):
             return RunResult(run_id, session_id, False, error="runtime_port_missing")
         if self.recorder is None:
             return RunResult(run_id, session_id, False, error="recorder_missing")
@@ -337,9 +365,12 @@ class AgentRuntime:
             )
             if not str(reply or "").strip():
                 raise RuntimeError("empty_response")
-            sent = await self.message_sender.send(session_id, reply)
-            if sent is False:
-                raise RuntimeError("send_failed")
+            await self._send_text(
+                session_id,
+                reply,
+                run_id=run_id,
+                callback_key=f"deferred:{run_id}",
+            )
         except (Exception, asyncio.CancelledError) as exc:
             try:
                 # Refresh after awaited model/send work; explicit start time
@@ -422,7 +453,9 @@ class AgentRuntime:
         run_id = str(context.run_id or "")
         if not decision.should_speak:
             return RunResult(run_id, session_id, False, error="not_due")
-        if self.model_gateway is None or self.message_sender is None:
+        if self.model_gateway is None or (
+            self.action_executor is None and self.message_sender is None
+        ):
             return RunResult(run_id, session_id, False, error="runtime_port_missing")
         if self.recorder is None:
             return RunResult(run_id, session_id, False, error="recorder_missing")
@@ -447,9 +480,12 @@ class AgentRuntime:
             )
             if not str(reply or "").strip():
                 raise RuntimeError("empty_response")
-            sent = await self.message_sender.send(session_id, reply)
-            if sent is False:
-                raise RuntimeError("send_failed")
+            await self._send_text(
+                session_id,
+                reply,
+                run_id=run_id,
+                callback_key=f"proactive:{run_id}",
+            )
         except (Exception, asyncio.CancelledError) as exc:
             state = self.store.get(session_id)
             state.last_proactive_at = moment

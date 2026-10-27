@@ -122,3 +122,101 @@ class RepoActionSink:
             "run_id": record.run_id,
             "reason": record.reason,
         })
+
+
+class ActionExecutor:
+    """Single execution and audit coordinator for runtime actions.
+
+    Runtime-initiated actions go through this class. Host-native callbacks may
+    use ``begin``/``finish`` directly, but they must not maintain a parallel
+    action ledger.
+    """
+
+    def __init__(self, port, ledger: ActionLedger | None = None, clock=None) -> None:
+        self.port = port
+        self.ledger = ledger
+        self.clock = clock or (lambda: 0.0)
+
+    def _at(self, at: float | None) -> float:
+        return float(self.clock() if at is None else at)
+
+    def begin(
+        self,
+        request,
+        *,
+        run_id: str,
+        callback_key: str,
+        at: float | None = None,
+        attempt: int = 1,
+        reason: str = "",
+    ):
+        if self.ledger is None:
+            return None
+        try:
+            return self.ledger.begin(
+                session_id=request.session_id,
+                run_id=run_id,
+                callback_key=callback_key,
+                kind=request.kind,
+                at=self._at(at),
+                attempt=attempt,
+                reason=reason,
+            )
+        except Exception:  # noqa: BLE001 - audit is fail-open
+            return None
+
+    def finish(
+        self,
+        attempted,
+        status: ActionStatus,
+        *,
+        at: float | None = None,
+        reason: str = "",
+    ) -> None:
+        if self.ledger is None or attempted is None:
+            return
+        try:
+            self.ledger.finish(attempted, status, at=self._at(at), reason=reason)
+        except Exception:  # noqa: BLE001 - audit is fail-open
+            return
+
+    async def execute(
+        self,
+        request,
+        *,
+        run_id: str,
+        callback_key: str,
+        at: float | None = None,
+        attempt: int = 1,
+    ):
+        from .contracts import ActionResult
+
+        attempted = self.begin(
+            request,
+            run_id=run_id,
+            callback_key=callback_key,
+            at=at,
+            attempt=attempt,
+        )
+        try:
+            result = await self.port.execute(request)
+        except Exception:  # noqa: BLE001 - host errors must not leak payloads
+            result = ActionResult(False, "host_action_failed")
+        status = ActionStatus.SUCCEEDED if result.ok else ActionStatus.FAILED
+        self.finish(attempted, status, at=at, reason=result.reason)
+        return result
+
+
+class ActionMessageSender:
+    """Compatibility SEND_TEXT view over the one ActionPort."""
+
+    def __init__(self, port) -> None:
+        self.port = port
+
+    async def send(self, session_id: str, text: str) -> bool:
+        from .contracts import ActionKind, ActionRequest
+
+        result = await self.port.execute(
+            ActionRequest(session_id=session_id, kind=ActionKind.SEND_TEXT, text=text)
+        )
+        return bool(result.ok)
