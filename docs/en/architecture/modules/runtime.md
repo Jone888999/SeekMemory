@@ -12,6 +12,14 @@ app/runtime defines host-agnostic session state, attention decisions, and runtim
 - TimingPolicy is a pure wait/retry deadline policy. Scheduler reads persisted state and returns due runs; RuntimeWorker polls, deduplicates in-flight work, and dispatches without owning memory rules.
 - MemoryContextPort delegates to the existing RecallService through an adapter; Runtime does not implement a second memory retrieval path.
 
+## Proactive policy and action audit
+
+`DefaultProactivePolicy` is a deterministic, state-only policy. It requires an explicit `now`, returns the next eligibility time, and applies the due time, quiet deadline, cooldown, retry delay, ignored-streak backoff, and attempt limit. It performs no I/O, model call, or state mutation; it is disabled by default until runtime composition opts in. `plan_proactive_dispatch` sorts eligible sessions by due time, applies a per-tick fan-out cap, and returns overflow as still-due work for later ticks.
+
+`ActionLedger` records an attempted action followed by at most one terminal outcome (`succeeded`, `failed`, or `cancelled`). Its stable idempotency key is derived from session, run, action kind, and the host callback key; the callback key itself is not stored. `RepoActionSink` writes metadata through `RuntimeEpisodeRepository`. The audit stores only identifiers, timestamps, bounded reason codes, attempt numbers, and status; it excludes message text, prompts, tool arguments, and results.
+
+`SessionState` keeps attention quota and reset time separate from unread counts. The legacy migration helper only moves `unread_count` when the caller identifies an old `session#speaker` quota record. Legacy quota values had no enforced TTL, so migration preserves them with no reset deadline.
+
 ## Two runtime paths
 
 **Normal AstrBot reply:** a hook gives the user message to AgentRuntime.accept_user; RunRecorder writes a user Source and queue projection; the request hook gets memory through runtime.build_context; after model response and host delivery, capture/delivery hooks use AgentRuntime and RunRecorder to record the assistant Source, recall reinforcement, and EpisodeRecord.

@@ -36,10 +36,22 @@ from .episode import (
     normalize_tool_calls,
     safe_error_code,
 )
+from .actions import ActionLedger, RepoActionSink, action_idempotency_key
 from .recorder import RecordedReply, RecordedTurn, RunRecorder
+from .proactive import (
+    DefaultProactivePolicy,
+    ProactiveCandidate,
+    ProactiveDispatchPlan,
+    plan_proactive_dispatch,
+)
 from .runtime import AgentRuntime
 from .scheduler import DueRun, Scheduler, TimingPolicy
-from .state import RepoStateStore, InMemoryStateStore, JsonStateStore
+from .state import (
+    InMemoryStateStore,
+    JsonStateStore,
+    RepoStateStore,
+    migrate_legacy_attention_quota,
+)
 from .tools import (
     ToolCall,
     ToolGuardDecision,
@@ -51,13 +63,18 @@ from .worker import RuntimeWorker
 
 __all__ = [
     "ActionKind",
+    "ActionLedger",
     "ActionRecord",
     "ActionSink",
     "ActionStatus",
     "AgentRuntime",
     "AttentionLevel",
     "Clock",
+    "DefaultProactivePolicy",
+    "ProactiveCandidate",
+    "ProactiveDispatchPlan",
     "RepoEpisodeStore",
+    "RepoActionSink",
     "RepoStateStore",
     "EpisodeOutcome",
     "EpisodeRecorder",
@@ -95,7 +112,10 @@ __all__ = [
     "delivery_failure_metadata",
     "delivery_failure_outcome",
     "episode_outcome",
+    "action_idempotency_key",
+    "plan_proactive_dispatch",
     "normalize_tool_calls",
+    "migrate_legacy_attention_quota",
     "safe_error_code",
     "tool_result_failed",
 ]

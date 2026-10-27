@@ -1,5 +1,19 @@
 # 变更记录
 
+## Unreleased
+
+### 中文
+
+- 新增默认关闭的主动决策纯策略，显式处理到期时间、安静窗口、冷却、重试、忽略连击退避和最大尝试次数；有界选择器优先派发最早到期会话，其余保持待处理。
+- 扩展 `runtime_episodes` 保存无正文的动作尝试与终态；重复回调幂等，每个 action 最多保留一个终态，并沿用现有保留清理。
+- `SessionState` 增加独立的注意力额度和重置时间字段；为调用方明确识别的旧 `session#speaker` 额度行提供迁移，保留旧额度且不重解释普通未读数。
+
+### English
+
+- Add a default-closed pure proactive policy for due times, quiet windows, cooldown, retry, ignored-streak backoff and maximum attempts. Its bounded selector dispatches the oldest eligible sessions first and leaves the rest pending.
+- Extend `runtime_episodes` with content-free action attempts and terminal outcomes. Duplicate callbacks are idempotent, each action keeps at most one terminal outcome, and existing retention cleanup applies.
+- Add separate attention quota and reset-time fields to `SessionState`. Provide migration for legacy `session#speaker` quota rows when identified by the caller, preserving saved quota values without reinterpreting normal unread counts.
+
 ## 0.4.3 — 2026-10-27
 
 ### 中文

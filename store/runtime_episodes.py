@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
+import math
+import re
 import time
 from typing import Any
 
@@ -11,6 +14,17 @@ try:
     from .sqlite import SqliteRepository, now_iso
 except ImportError:
     from sqlite import SqliteRepository, now_iso
+
+
+_SAFE_ACTION_REASON = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]{0,63}$")
+
+
+def _safe_action_reason(value: Any) -> str:
+    """Keep stable reason codes and discard free-form content."""
+    reason = str(value or "").strip()
+    if not reason:
+        return ""
+    return reason if _SAFE_ACTION_REASON.fullmatch(reason) else "error"
 
 
 class RuntimeEpisodeRepository(SqliteRepository):
@@ -46,6 +60,87 @@ class RuntimeEpisodeRepository(SqliteRepository):
                 ),
             )
         return episode_id
+
+    def append_action(self, action: dict[str, Any]) -> bool:
+        """Append one idempotent content-free action transition.
+
+        Attempt rows are unique per action/attempt. All terminal callbacks use
+        one stable row ID and a partial unique index ensures that only the
+        first terminal status for an action is retained.
+        """
+        action_id = str(action.get("action_id") or "").strip()
+        kind = str(action.get("action_kind") or "").strip()
+        status = str(action.get("action_status") or "").strip()
+        attempt = max(1, int(action.get("attempt") or 1))
+        if not action_id:
+            raise ValueError("action_id is required")
+        if kind not in {"send_text", "tool_call", "host_action"}:
+            raise ValueError("invalid action_kind")
+        if status not in {"attempted", "succeeded", "failed", "cancelled"}:
+            raise ValueError("invalid action_status")
+
+        raw_at = float(action.get("at") or 0.0)
+        if not math.isfinite(raw_at) or raw_at < 0.0:
+            raise ValueError("action at must be finite and non-negative")
+        at = datetime.datetime.fromtimestamp(
+            raw_at, tz=datetime.timezone.utc
+        ).isoformat(timespec="seconds")
+        event_suffix = f"attempted:{attempt}" if status == "attempted" else "terminal"
+        identity = hashlib.sha256(
+            f"{action_id}\0{event_suffix}".encode("utf-8")
+        ).hexdigest()
+        terminal = status in {"succeeded", "failed", "cancelled"}
+        with self.conn:
+            if terminal:
+                attempted = self.conn.execute(
+                    "SELECT 1 FROM runtime_episodes WHERE action_id = ? "
+                    "AND action_status = 'attempted' LIMIT 1",
+                    (action_id,),
+                ).fetchone()
+                if attempted is None:
+                    raise ValueError("terminal action requires a persisted attempt")
+            cursor = self.conn.execute(
+                "INSERT OR IGNORE INTO runtime_episodes("
+                "id, at, session_id, decision, reason, action, delivered, "
+                "response_chars, tool_calls, outcome, error, user_source_id, "
+                "assistant_source_id, run_id, action_id, action_kind, "
+                "action_status, attempt) "
+                "VALUES(?, ?, ?, 'action', ?, ?, ?, 0, '[]', ?, '', '', '', ?, ?, ?, ?, ?)",
+                (
+                    f"act_{identity}",
+                    at,
+                    str(action.get("session_id") or ""),
+                    _safe_action_reason(action.get("reason")),
+                    kind,
+                    int(status == "succeeded"),
+                    status,
+                    str(action.get("run_id") or ""),
+                    action_id,
+                    kind,
+                    status,
+                    attempt,
+                ),
+            )
+        return bool(cursor.rowcount)
+
+    def list_actions(
+        self, session_id: str = "", limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """List bounded action audit rows, optionally for one session."""
+        size = max(1, min(1000, int(limit)))
+        if session_id:
+            rows = self.conn.execute(
+                "SELECT * FROM runtime_episodes WHERE action_id IS NOT NULL "
+                "AND session_id = ? ORDER BY at DESC, rowid DESC LIMIT ?",
+                (str(session_id), size),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM runtime_episodes WHERE action_id IS NOT NULL "
+                "ORDER BY at DESC, rowid DESC LIMIT ?",
+                (size,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def list(self, session_id: str = "", limit: int = 100) -> list[dict[str, Any]]:
         size = max(1, min(1000, int(limit)))

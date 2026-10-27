@@ -13,7 +13,7 @@ store 是唯一 SQL 边界。Store 在 [store/__init__.py](../../../../store/__i
 | ExtractionRepository | Source admission 的 extraction_state 投影、重试/退避/deferred/extracted/dead |
 | LedgerRepository | 追加式哈希链条目和校验 |
 | RuntimeStateRepository | 按会话可变的运行时状态 |
-| RuntimeEpisodeRepository | 追加式运行结果元数据和保留清理 |
+| RuntimeEpisodeRepository | 追加式运行结果与无正文动作元数据，以及共享保留清理 |
 | DreamRepository | 每日 Dream 执行状态与汇总 |
 | StoreMetricsRepository | 容量观测的只读计数 |
 | TraceStore | 单独的有界 JSONL Agent Run Trace，不走业务 Artifact 版本链 |
@@ -25,6 +25,8 @@ SQL schema 和迁移由 SqliteDatabase 管理；仓储共享连接，不创建�
 - Artifact commit 校验 expected_revision 与下一 revision，并在单个事务中写 blob、node head、版本快照、版本级证据、state event 和 ledger。commit_many 把一组更新放在一个事务中，任何一条失败则整组回滚。
 - extraction admission 在同一事务内写 Source blob/row 与队列状态。队列正文通过联接 Source 读取；成功/失败只更改队列状态，不删除原始消息。
 - Source ID 采用幂等写入。重复 Source 不会变成新的事实行。
+- 运行时动作行在 `runtime_episodes` 中增加可空动作身份和状态元数据。已有 episode 行保留原值；迁移补充默认值、保留每个普通 run 一条 episode 的唯一索引，同时允许动作行共享 run ID。部分唯一索引确保每个 action 至多一个终态；触发器会忽略终态之后到达的尝试。动作行沿用 episode 的清理上限。
+- `runtime_state` 继续以 JSON payload 保存 `SessionState`。注意力额度与重置时间是新增字段；只有宿主调用方确认旧说话人额度记录后才执行迁移，并保留原额度。
 
 ## Cache
 
