@@ -1,7 +1,7 @@
 # EVENT-CONTRACT.md · 事件分层决策
 
 > 状态：**已决策（v0.4.2）**。本文记录"为什么现在不引入 HostEvent 分层"，
-> 以及什么条件下需要重新评估。权威实现：`app/runtime/contracts.py` 的 `RuntimeInput`。
+> 以及什么条件下需要重新评估。权威实现：`app/runtime/contracts/` 的 `RuntimeInput`。
 
 ## 决策
 

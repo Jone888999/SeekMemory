@@ -2,7 +2,7 @@
 
 > Status: **decided (v0.4.2)**. This page records why no HostEvent layer is introduced
 > yet, and what would trigger a revisit. Authoritative implementation:
-> `RuntimeInput` in `app/runtime/contracts.py`.
+> `RuntimeInput` in `app/runtime/contracts/`.
 
 ## Decision
 
