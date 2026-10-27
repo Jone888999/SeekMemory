@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .astrbot_time import utc8_timestamp
-from .astrbot_event import event_id as host_event_id, to_runtime_input
+from .time import utc8_timestamp
+from .events import event_id as host_event_id, to_runtime_input
 
 try:
-    from ..app.runtime.contracts import (
+    from ...app.runtime.contracts import (
         RunDecision,
         RuntimeInput,
         UserRunReceipt,
         WakeAction,
     )
-    from ..app.runtime.recorder import RecordedReply
-    from ..core.source import make_source_id
-    from ..app.runtime.tools import ToolPolicy, trace_tool_call
+    from ...app.runtime.recorder import RecordedReply
+    from ...core.source import make_source_id
+    from ...app.runtime.tools import ToolPolicy, trace_tool_call
 except ImportError:
     from app.runtime.contracts import (
         RunDecision,

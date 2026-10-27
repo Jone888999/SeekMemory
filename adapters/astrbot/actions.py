@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 try:
-    from ..app.runtime.contracts import ActionKind, ActionRequest, ActionResult
+    from ...app.runtime.contracts import ActionKind, ActionRequest, ActionResult
 except ImportError:  # standalone adapter tests
     from app.runtime.contracts import ActionKind, ActionRequest, ActionResult
 

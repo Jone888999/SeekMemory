@@ -10,8 +10,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.astrbot_model import AstrBotModelGateway  # noqa: E402
-from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
+from adapters.astrbot.model import AstrBotModelGateway  # noqa: E402
+from adapters.astrbot.runtime import AstrBotRuntimeAdapter  # noqa: E402
 from app.runtime import WakeAction, RunDecision, UserRunReceipt  # noqa: E402
 from core.source import make_source_id  # noqa: E402
 

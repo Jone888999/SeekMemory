@@ -2,8 +2,8 @@
 
 from astrbot.api import star
 
-from .adapters.astrbot_hooks import build_astrbot_hooks
-from .adapters.astrbot_plugin import AstrBotPlugin
+from .adapters.astrbot.hooks import build_astrbot_hooks
+from .adapters.astrbot.plugin import AstrBotPlugin
 
 _HOOKS = build_astrbot_hooks(__name__)
 

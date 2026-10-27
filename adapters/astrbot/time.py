@@ -8,11 +8,11 @@ from dataclasses import replace
 from typing import Any
 
 try:
-    from ..app.contracts import DialogueTurn
-    from ..app.ports import SourceStore
-    from ..app.runtime.recorder import RecordedReply, RecordedTurn, RunRecorder
-    from ..core.source import Source
-    from ..perceive.buffer import Buffer
+    from ...app.contracts import DialogueTurn
+    from ...app.ports import SourceStore
+    from ...app.runtime.recorder import RecordedReply, RecordedTurn, RunRecorder
+    from ...core.source import Source
+    from ...perceive.buffer import Buffer
 except ImportError:  # standalone adapter imports in scripts/tests
     from app.contracts import DialogueTurn
     from app.ports import SourceStore

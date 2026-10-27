@@ -15,18 +15,18 @@ import time
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
-from ..app.runtime.attention import (
+from ...app.runtime.attention import (
     AttentionPolicy,
     quota_gate,
     thresholds_from_config,
 )
-from ..app.runtime.contracts import RunDecision, SessionState, WakeAction
-from ..app.runtime.scene_hints import compose, time_window
-from ..app.runtime.signals import Signals
-from ..app.runtime.state import migrate_legacy_attention_quota
-from .astrbot_event import to_runtime_input
-from .astrbot_runtime import AstrBotRuntimeAdapter
-from .astrbot_signals import AstrBotSignals
+from ...app.runtime.contracts import RunDecision, SessionState, WakeAction
+from ...app.runtime.scene_hints import compose, time_window
+from ...app.runtime.signals import Signals
+from ...app.runtime.state import migrate_legacy_attention_quota
+from .events import to_runtime_input
+from .runtime import AstrBotRuntimeAdapter
+from .signals import AstrBotSignals
 
 QUOTA_TTL = 900.0
 
