@@ -46,7 +46,9 @@ AstrBotHooks = importlib.import_module(
 AttentionHooks = importlib.import_module(
     f"{ROOT.name}.adapters.astrbot.attention"
 ).AttentionHooks
-ToolPolicy = importlib.import_module(f"{ROOT.name}.app.runtime").ToolPolicy
+RuntimePackage = importlib.import_module(f"{ROOT.name}.app.runtime")
+ToolPolicy = RuntimePackage.ToolPolicy
+ActionStatus = RuntimePackage.ActionStatus
 
 
 class _Sources:
@@ -86,6 +88,50 @@ class RuntimePluginContextTest(unittest.TestCase):
 
 
 class HostHookActionTest(unittest.TestCase):
+    def test_schedule_proactive_delegates_to_runtime_when_enabled(self):
+        calls = []
+
+        class Runtime:
+            def schedule_proactive(self, session_id, delay, *, now):
+                calls.append((session_id, delay))
+
+        hook = AstrBotHooks()
+        hook.services = SimpleNamespace(runtime=Runtime())
+        hook._c = lambda key, default: True if key == "proactive_enabled" else default
+        hook._schedule_proactive("s1")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "s1")
+        self.assertEqual(calls[0][1], 1800.0)
+
+    def test_send_action_audit_has_attempt_and_terminal(self):
+        class Ledger:
+            def __init__(self):
+                self.finished = []
+
+            def begin(self, **kwargs):
+                return SimpleNamespace(action_id="send-action")
+
+            def finish(self, record, status, **kwargs):
+                self.finished.append((record.action_id, status))
+
+        class ExtraEvent:
+            def __init__(self):
+                self.extras = {}
+
+            def get_extra(self, key, default=None):
+                return self.extras.get(key, default)
+
+            def set_extra(self, key, value):
+                self.extras[key] = value
+
+        hook = AstrBotHooks()
+        hook.action_ledger = Ledger()
+        event = ExtraEvent()
+        hook._begin_send_action(event, "s1", "run-1", "turn-1")
+        self.assertIsNotNone(event.get_extra("_seekmemory_send_action"))
+        hook._finish_send_action(event, ActionStatus.SUCCEEDED)
+        self.assertEqual(hook.action_ledger.finished, [("send-action", ActionStatus.SUCCEEDED)])
+
     def test_tool_hooks_use_action_ledger_without_payload(self):
         class Ledger:
             def __init__(self):

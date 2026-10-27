@@ -296,5 +296,10 @@
     "description": "允许运行时主动发起已排期的会话（默认关闭）",
     "type": "bool",
     "default": false
+  },
+  "proactive_idle_seconds": {
+    "description": "用户活动后多久允许主动发起会话（秒，默认 1800）",
+    "type": "int",
+    "default": 1800
   }
 }
