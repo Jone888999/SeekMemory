@@ -21,3 +21,4 @@ Fixes # (issue)
 - [ ] I confirm the target branch is `main`
 - [ ] Code has passed local testing
 - [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] Docs, if changed, are mirrored in `docs/zh/` and `docs/en/`, included in `mkdocs.yml` nav, and pass `python scripts/check_docs_structure.py`

@@ -7,13 +7,13 @@ module path directly would leave them unbound after plugin reload.
 
 from __future__ import annotations
 
-import datetime
 import time
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
 from ..perceive.calls import log_call
+from .astrbot_attention import AttentionHooks
 from .astrbot_runtime import AstrBotRuntimeAdapter
 
 
@@ -37,7 +37,7 @@ class AstrBotHooks:
             pass
 
     def _may_observe(self, event: AstrMessageEvent) -> bool:
-        if self.services is None:
+        if not self.ready or self.services is None:
             return False
         return self.services.access_service.may_observe(
             str(getattr(event, "unified_msg_origin", "") or ""),
@@ -45,7 +45,7 @@ class AstrBotHooks:
         )
 
     def _may_recall(self, event: AstrMessageEvent) -> bool:
-        if self.services is None:
+        if not self.ready or self.services is None:
             return False
         return self.services.access_service.may_recall(
             str(getattr(event, "unified_msg_origin", "") or ""),
@@ -83,7 +83,9 @@ class AstrBotHooks:
                     context={"removed": len(removed_tools), "enforced": True},
                 )
             runtime_input = AstrBotRuntimeAdapter.from_event(
-                event, text, umo, str(event.get_sender_id())
+                event, text, umo, str(event.get_sender_id()),
+                owner_id=getattr(self, "_owner_id", lambda: "")(),
+                names=getattr(self, "_address_names", lambda: ())(),
             )
             context = self.services.runtime.build_context(runtime_input)
             block, info = context.text, context.info
@@ -136,9 +138,8 @@ class AstrBotHooks:
                 text,
                 umo,
                 sender,
-                # Match the old post-buffer-add observation: a non-deferred
-                # turn is already present in the projection when observe runs.
-                unread_count=len(self.buffer.items) + (0 if deferred else 1),
+                owner_id=getattr(self, "_owner_id", lambda: "")(),
+                names=getattr(self, "_address_names", lambda: ())(),
             )
             receipt = self.services.runtime.accept_user(
                 runtime_input,
@@ -187,7 +188,6 @@ class AstrBotHooks:
                 speaker_id=str(event.get_self_id()),
                 turn_id=AstrBotRuntimeAdapter.reply_turn_id(event, text),
                 reply_to=AstrBotRuntimeAdapter.user_source_id(event),
-                at=datetime.datetime.now().isoformat(timespec="seconds"),
                 recall_ids=AstrBotRuntimeAdapter.recall_ids(event),
             )
             if reply is not None:
@@ -214,13 +214,15 @@ class AstrBotHooks:
             tool_calls=AstrBotRuntimeAdapter.tool_calls(event),
             user_source_id=AstrBotRuntimeAdapter.user_source_id(event),
             assistant_source_id=assistant_source_id,
+            read_through_seq=AstrBotRuntimeAdapter.read_through_seq(event),
         )
         AstrBotRuntimeAdapter.mark_episode_recorded(event)
         self._maybe_prune_runtime_episodes()
 
     async def observe_agent_begin(self, event, run_context) -> None:
-        if self._may_observe(event):
-            self.run_tracer.begin(event)
+        if not self._may_observe(event):
+            return
+        self.run_tracer.begin(event)
         self.trace.record(
             "runtime",
             "agent_begin",
@@ -231,9 +233,10 @@ class AstrBotHooks:
         )
 
     async def observe_agent_done(self, event, run_context, response) -> None:
+        if not self._may_observe(event):
+            return
         role = str(getattr(response, "role", "") or "")
-        if self._may_observe(event):
-            self.run_tracer.done(event, "error" if role == "err" else "ok")
+        self.run_tracer.done(event, "error" if role == "err" else "ok")
         self.trace.record("runtime", "agent_done", {"role": role})
         if role != "err":
             return
@@ -248,8 +251,9 @@ class AstrBotHooks:
         self._maybe_prune_runtime_episodes()
 
     async def observe_tool(self, event, tool, tool_args) -> None:
-        if self._may_observe(event):
-            self.run_tracer.tool_begin(event, tool)
+        if not self._may_observe(event):
+            return
+        self.run_tracer.tool_begin(event, tool)
         call = AstrBotRuntimeAdapter.observe_tool(
             event, tool, tool_args, self.tool_policy
         )
@@ -264,8 +268,9 @@ class AstrBotHooks:
         )
 
     async def observe_tool_result(self, event, tool, tool_args, tool_result) -> None:
-        if self._may_observe(event):
-            self.run_tracer.tool_end(event, tool)
+        if not self._may_observe(event):
+            return
+        self.run_tracer.tool_end(event, tool)
         name = str(getattr(tool, "name", tool) or "")
         self.trace.record(
             "tool",
@@ -285,8 +290,8 @@ class AstrBotHooks:
         self.services.background_service.start()
 
 
-def _register(main_module: str, name: str, decorator):
-    function = getattr(AstrBotHooks, name)
+def _register(main_module: str, name: str, decorator, owner=AstrBotHooks):
+    function = getattr(owner, name)
     function.__module__ = main_module
     function.__qualname__ = f"Main.{name}"
     return decorator(function)
@@ -323,5 +328,15 @@ def build_astrbot_hooks(main_module: str) -> dict:
         ),
         "start_jobs": _register(
             main_module, "start_jobs", filter.on_astrbot_loaded()
+        ),
+        "attention_gate": _register(
+            main_module,
+            "attention_gate",
+            filter.event_message_type(filter.EventMessageType.ALL, priority=9999),
+            owner=AttentionHooks,
+        ),
+        "inject_scene_hints": _register(
+            main_module, "inject_scene_hints", filter.on_llm_request(),
+            owner=AttentionHooks,
         ),
     }

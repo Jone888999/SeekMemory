@@ -12,6 +12,8 @@ export const logStateLabels: Record<string, string> = {
   debug: "调试",
   info: "信息",
   warning: "警告",
+  reply: "允许回复",
+  stop: "本轮不回复",
 }
 export function LogEntry({
   event,

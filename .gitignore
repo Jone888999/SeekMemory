@@ -8,10 +8,14 @@ __pycache__/
 *.log
 .pytest_cache/
 
+# Conformance / mutation scratch output (tests write SQLite here).
+/.tmp/
+
 # Generated plugin view assets; include them in release packages.
 /pages/memory/
 /dist/
 /data/
+/site/
 
 # Legacy local build output.
 /views/memory/

@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+from .astrbot_time import utc8_timestamp
+from .astrbot_event import event_id as host_event_id, to_runtime_input
+
 try:
     from ..app.runtime.contracts import (
         RunDecision,
@@ -29,37 +34,32 @@ class AstrBotRuntimeAdapter:
 
     @staticmethod
     def from_event(event, text: str, umo: str, sender: str,
-                   unread_count: int = 0, unread_seq: int = 0) -> RuntimeInput:
-        try:
-            private = bool(event.is_private_chat())
-        except Exception:  # noqa: BLE001 - unknown host event defaults to group
-            private = False
+                   unread_count: int = 0, unread_seq: int = 0,
+                   received_at: float | None = None, owner_id: str = "",
+                   names: tuple[str, ...] = ()) -> RuntimeInput:
+        mapped = to_runtime_input(
+            event, session_id=umo, owner_id=owner_id, names=names,
+            unread_count=unread_count, unread_seq=unread_seq, received_at=received_at,
+        )
         value = str(text or "")
-        try:
-            created_at = float(getattr(event, "created_at", 0.0) or 0.0)
-        except (TypeError, ValueError):
-            created_at = 0.0
-        direct = bool(getattr(event, "is_at_or_wake_command", False))
-        return RuntimeInput(
+        return replace(
+            mapped,
             session_id=str(umo or ""),
             text=value,
             speaker_id=str(sender or ""),
-            private=private,
-            mentioned=private or direct,
+            mentioned=mapped.private or mapped.mentioned,
             question=("?" in value or "\uff1f" in value),
-            unread_count=max(0, int(unread_count)),
-            unread_seq=max(0, int(unread_seq)),
-            at=created_at,
         )
 
     @staticmethod
+    def source_event_time(source: dict | None) -> float:
+        """Map a persisted Source timestamp to epoch seconds; unknown -> 0."""
+        raw = str((source or {}).get("at") or "")
+        return utc8_timestamp(raw)
+
+    @staticmethod
     def event_id(event) -> str:
-        try:
-            return str(
-                getattr(getattr(event, "message_obj", None), "message_id", "") or ""
-            )
-        except Exception:
-            return ""
+        return host_event_id(event)
 
     @staticmethod
     def get_extra(event, key: str, default=None):
@@ -133,6 +133,12 @@ class AstrBotRuntimeAdapter:
     def bind_user(cls, event, receipt: UserRunReceipt) -> None:
         cls.set_extra(event, "_seekmemory_turn_id", receipt.turn_id)
         cls.set_extra(event, "_seekmemory_source_id", receipt.source_id)
+        cls.set_extra(event, "_seekmemory_read_through_seq", receipt.read_through_seq)
+
+    @classmethod
+    def read_through_seq(cls, event) -> int | None:
+        value = cls.get_extra(event, "_seekmemory_read_through_seq")
+        return value if type(value) is int and value >= 0 else None
 
     @classmethod
     def bind_reply(cls, event, reply: RecordedReply) -> None:

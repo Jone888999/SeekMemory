@@ -4,6 +4,8 @@
 
 ### 中文
 
+- 同步 v0.4.3 后的宿主运行时，保留人格包与 Dream 控制台接线；补齐重载及启动失败重试验证，将控制台文档迁入中英双语目录，日志增加“允许回复／本轮不回复”状态筛选。无新增数据库或配置变更。
+
 - 按界面反馈移除星图数量提示、关联筛选入口、底部键盘列表及重复详情按钮；浮动卡片的详情按钮跟随记忆点配色，明黄、淡绿使用深色文字。
 
 - 修复星图入场计时停止后亮面残留：高亮在入场结束前淡出，常态只随波纹短暂亮起；将土黄、橄榄黄绿调整为明黄、淡绿，并统一明暗主题。
@@ -30,14 +32,13 @@
 
 - 人格控制台接入历史版本回滚、差异比较与变化原因；安装时校验预览内容，按版本显示已安装状态；Dream 日志区分预算停止与完成，并显示调度开关。新增控制台接口需与 dashboard 同步更新，不涉及数据库迁移或配置变化（#82 / #83）。
 
-- 修复 seed 人格注入被 180 字上限截断：`_persona_sentence()` 不再复用单条记忆的清洗函数，人格整段进入常驻层，长度只由注入预算约束；新增 `scripts/bootstrap_persona.py`（含 `--dry-run`）与回归测试 `tests/test_persona_injection.py`（ISSUE-0034 / PR-0034）。
+- 补齐 AstrBot 生命周期清理和 DSH 运行时协议桥：支持能力识别、同轮 Source 回执与时间传递、服务决策映射和卸载取消；运行时写失败不补发旧捕获，生成回复不冒充已交付。新增共享契约、宿主与本机模拟服务测试，真实 DSH/Python 联调及 #117 动作审计接线仍待完成，无数据库或配置变更。
 
-
-- 修复 Windows 补充验证发现的问题：状态接口定义补齐已有的原文辅助检索预算字段，90 天模拟重启后正确关闭数据库连接，宿主测试按初始化权限和当前运行入口验证消息捕获及记忆注入。记忆注入异常日志仅记录异常类型，避免泄露原文或路径。实际接口响应、数据库格式和配置保持不变。
-
-- 将仓库约定拆分为 repo skill 与四份主题 reference，通过 Codex/Claude Code symlink 共用；简化 PR 模板以收集范围、验证和兼容性证据。扫描器待 UI 规则明确后再加入。PR CI 继续全量检查，本地验证按风险选择。
+- 补齐宿主动作执行接口，AstrBot 发送复用同一入口；不支持的动作和宿主失败返回固定原因码，取消继续交给运行时恢复。动作正文不进入审计，不修改数据库、公开配置或运行时策略。
 
 ### English
+
+- Integrate the post-v0.4.3 host runtime while retaining persona-pack and Dream console wiring. Verify reload and failed-start retry, move console documentation into the bilingual tree, and expose allow-reply/skip-reply log filters. No additional database or configuration changes.
 
 - Remove the graph count, relation filter, bottom keyboard list and duplicate detail action. Match floating-card detail buttons to their memory node colors with dark text on bright yellow and light green.
 
@@ -65,8 +66,48 @@
 
 - Connect persona rollback with version diffs and change reasons; validate previewed pack content before installation and show installed versions accurately. Dream distinguishes budget stops from completion and reports scheduling state. Ship the new console API and dashboard together; no database migration or configuration change (#82 / #83).
 
+- Harden AstrBot lifecycle cleanup and add the DSH runtime protocol bridge with capability detection, per-turn Source receipts and time metadata, server decision mapping, and unload cancellation. Failed runtime writes never fall back to legacy capture, and generation is not treated as delivery. Add shared-contract, host, and loopback mock tests. Real DSH/Python integration and the #117 action audit wiring remain pending; no database or configuration changes.
+
+- Add the host action execution port and route AstrBot sends through it. Unsupported actions and host failures return fixed reason codes; cancellation propagates to runtime recovery. Action text stays out of audit, with no database, public configuration, or runtime policy change.
+
+## 0.4.3 — 2026-10-27
+
+### 中文
+
+- 开口策略改为「主人必回、陌生人只在被 @ 或叫名字时回，且点名后陪聊 3 轮」：新增 `quota_gate` 纯函数（私聊/主人恒放行、点名刷新额度、普通消息消耗额度），修复 `stranger_quota_mode=off` 时连 @ 也被拦、以及 WAIT 决策不消耗额度的问题；新增 `attention_address_names`（默认「大肥鱼,肥鱼」），叫名字等同被点名。配置：`stranger_quota_mode=fixed:3`、`attention_thresholds={"owner_cooldown_seconds": 0}`。
+
+### English
+
+- Attention now means: the owner always gets a reply; strangers only when @-mentioned or called by name, then three follow-up rounds. Add the pure `quota_gate` (private/owner always allowed, mention refreshes quota, ambient messages consume it) and fix two bugs: `stranger_quota_mode=off` blocked even @-mentions, and WAIT decisions never consumed quota. Add `attention_address_names` (default `大肥鱼,肥鱼`). Deployed config: `stranger_quota_mode=fixed:3`, `attention_thresholds={"owner_cooldown_seconds": 0}`.
+
+## 0.4.2 — 2026-10-27
+
+### 中文
+
+- 修复运行时交付与恢复：冷却从实际发送完成计时，失败从实际失败时刻退避；普通和延迟回复仅确认本轮覆盖的消息。延迟任务取消或重启后仍可有限重试，轮询与直接调用共用并发上限。复用现有会话状态字段，无数据库迁移或新增配置；宿主不再用待抽取队列长度推算未读数。AstrBot 通过同一适配层时间钩子统一为 UTC+8，新时间带 +08:00 标记，内核读取格式和历史 Source 保持不变；没有时区的旧值保留原样。
+- 记忆感知的开口策略默认开启：AstrBot 事件经 `adapters/astrbot_event.py` 映射为 `RuntimeInput`，`adapters/astrbot_attention.py` 调策略后放行/`stop_event`；预设 quiet/balanced/chatty/intimate，陌生人额度按关系与配置，场景提示注入系统提示。group_guard 与 persona_gate 因此停用，由 SeekMemory 接管；连发合并与主动私聊仍由 message_merger / ping 插件负责（等 #116/#117）。基础件：`RuntimeInput` 向后兼容扩展多平台字段（scene/conversation_id/thread_id/role/addressed/reply_to_me 等，scene 预留 comment 评论区）；新增 `adapters/astrbot_event.py`（宿主事件→RuntimeInput 纯映射）与端到端策略测试；新增 `app/runtime/signals.py`（关系/相关度/热度/时间窗信号）、`attention.py`（纯函数策略，硬条件优先、主人冷却、陌生人关系额度）、`scene_hints.py`（时间/身份/亲疏提示）、`topics.py`（主动话题候选与冷却过滤）。只新增契约与纯函数，不改变线上行为（#123）。
+- 事件分层决策：暂不引入 HostEvent/ContentPart/EventCodec，宿主适配层直接产出扩展后的 `RuntimeInput`；演进触发条件见 `docs/zh/architecture/event-contract.md`。
+
+### English
+
+- Memory-aware attention is on by default: AstrBot events map to `RuntimeInput` via `adapters/astrbot_event.py`, `adapters/astrbot_attention.py` runs the policy and allows/`stop_event`s; presets quiet/balanced/chatty/intimate, stranger quota by relationship and config, scene hints injected into the system prompt. group_guard and persona_gate are retired in favour of SeekMemory; message merging and proactive DMs stay in the message_merger / ping plugins until #116/#117. Groundwork: backward-compatible multi-platform fields on `RuntimeInput` (scene/conversation_id/thread_id/role/addressed/reply_to_me, with `comment` reserved for comment sections); add a pure host-event mapper (`adapters/astrbot_event.py`) and end-to-end policy tests; new pure modules `signals.py` (relationship/relevance/heat/window), `attention.py` (hard conditions first, owner cooldown, stranger quota by relationship), `scene_hints.py` (time/role/closeness hints) and `topics.py` (proactive topic candidates with cooldown filtering). Contracts and pure functions only; no live behavior change (#123).
+- Event layering decision: no HostEvent/ContentPart/EventCodec yet; host adapters emit the extended `RuntimeInput` directly. Evolution triggers are recorded in `docs/zh/architecture/event-contract.md`.
+
+- 修复 seed 人格注入被 180 字上限截断：`_persona_sentence()` 不再复用单条记忆的清洗函数，人格整段进入常驻层，长度只由注入预算约束；新增 `scripts/bootstrap_persona.py`（含 `--dry-run`）与回归测试 `tests/test_persona_injection.py`（ISSUE-0034 / PR-0034）。
+
+- 新增 Dream 分诊 tradeoff 评估：冻结 40 个合成主题，跑生产 `DreamCycle -> IngestService.flush` 路径，用确定性 fake provider 记录调用、token、分诊选择、抽取量、重要事实召回、错误记忆/重复率、bot 行为/自我印象覆盖和 pending 数量/年龄，并对比 `cc814ce` 与 `d9fc248`。当前按预注册阈值判为 `NOT_ACCEPTED`：调用 -80.0%、token -72.8%，但重要事实召回 65.2%、自我印象覆盖 0/1，pending 每晚线性增长 8 个主题。不修改分诊算法，不新增服务/表/写入路径。
+
+- 修复 Windows 补充验证发现的问题：状态接口定义补齐已有的原文辅助检索预算字段，90 天模拟重启后正确关闭数据库连接，宿主测试按初始化权限和当前运行入口验证消息捕获及记忆注入。记忆注入异常日志仅记录异常类型，避免泄露原文或路径。实际接口响应、数据库格式和配置保持不变。
+
+- 将仓库约定拆分为 repo skill 与四份主题 reference，通过 Codex/Claude Code symlink 共用；简化 PR 模板以收集范围、验证和兼容性证据。扫描器待 UI 规则明确后再加入。PR CI 继续全量检查，本地验证按风险选择。
+
+### English
+
+- Fix runtime delivery and recovery: cooldown starts at confirmed send completion, backoff starts at failure, and normal/deferred replies acknowledge only input covered by that run. Deferred work remains recoverable with bounded retries after cancellation or restart, and scans/direct calls share a concurrency limit. Existing session fields are reused without database migration or new configuration. The host no longer infers unread counts from the extraction queue. AstrBot uses one adapter time hook for UTC+8 with an explicit +08:00 offset on new timestamps, preserving kernel read formats, historical Sources, and legacy values without timezone information.
+
 - Fix seed persona injection being truncated at 180 characters: `_persona_sentence()` no longer reuses the per-memory cleaner, so the whole persona reaches the pinned layer and only the injection budget bounds it; add `scripts/bootstrap_persona.py` (with `--dry-run`) and the `tests/test_persona_injection.py` regression suite (ISSUE-0034 / PR-0034).
 
+- Add a Dream triage tradeoff evaluation: a frozen 40-topic synthetic corpus runs the production `DreamCycle -> IngestService.flush` path with a deterministic fake provider and records calls, tokens, triage selection, extraction yield, important-fact recall, modeled false-memory/duplicate rates, bot-behavior/self-impression coverage and pending count/age, comparing `cc814ce` with `d9fc248`. The pre-registered thresholds currently return `NOT_ACCEPTED`: calls -80.0% and tokens -72.8%, but important-fact recall 65.2%, self-impression coverage 0/1 and pending growth of 8 topics per night. No triage algorithm change, new service/table or write path.
 
 - Fix findings from supplemental Windows validation: declare the existing Source recall budget fields in the status contract, close reopened database connections in the 90-day simulation, and exercise message capture and memory injection through initialized access policies and current runtime boundaries in host tests. Memory injection error logs now record only the exception type to avoid exposing message text or paths. Actual API responses, database format and configuration remain unchanged.
 
@@ -156,7 +197,7 @@ Persona foundation：seed 人格初始化、Dream 人格增量合成、同一 li
 - 安装入口从源码克隆调整为 Release 的 `astrbot_plugin_seekmemory.zip` 附件；
   源码 ZIP/tar.gz 和 Git 克隆保留开发源码，不含前端产物。详见 README 的安装说明。
 - 入口映射：原“插件配置”继续用于配置；记忆操作改从“插件卡片 → 插件视图”进入。
-  页面与截图见 [WebUI 使用说明](docs/webui/README.md)。
+  页面与截图见 [WebUI 使用说明](docs/zh/guides/webui.md)。
 
 ## 0.4.0 — 2026-10-23
 

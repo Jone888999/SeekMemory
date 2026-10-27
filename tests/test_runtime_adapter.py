@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adapters.astrbot_model import AstrBotModelGateway  # noqa: E402
 from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
-from app.runtime import WakeAction, RunDecision  # noqa: E402
+from app.runtime import WakeAction, RunDecision, UserRunReceipt  # noqa: E402
 from core.source import make_source_id  # noqa: E402
 
 
@@ -46,13 +46,31 @@ class AdapterTest(unittest.TestCase):
         self.assertTrue(result.question)
         self.assertEqual(result.unread_count, 3)
 
+    def test_source_event_time_parses_iso_and_defaults_to_zero(self) -> None:
+        self.assertEqual(
+            AstrBotRuntimeAdapter.source_event_time(
+                {"at": "1970-01-01T00:00:10+00:00"}
+            ),
+            10.0,
+        )
+        self.assertEqual(AstrBotRuntimeAdapter.source_event_time({}), 0.0)
+        self.assertEqual(
+            AstrBotRuntimeAdapter.source_event_time({"at": "not-a-time"}), 0.0
+        )
+
+    def test_source_time_without_offset_has_unknown_instant(self) -> None:
+        self.assertEqual(
+            AstrBotRuntimeAdapter.source_event_time({"at": "1970-01-01T08:00:10"}),
+            0.0,
+        )
+
     def test_event_timestamp_and_unread_watermark_are_mapped(self) -> None:
         event = Event(False)
         event.created_at = 123.5
         result = AstrBotRuntimeAdapter.from_event(
             event, "ambient", "g1", "u1", unread_count=4, unread_seq=9
         )
-        self.assertEqual(result.at, 123.5)
+        self.assertEqual(result.event_time, 123.5)
         self.assertEqual(result.unread_count, 4)
         self.assertEqual(result.unread_seq, 9)
 
@@ -62,7 +80,7 @@ class AdapterTest(unittest.TestCase):
         result = AstrBotRuntimeAdapter.from_event(
             event, "ambient", "g1", "u1", unread_count=-3, unread_seq=-2
         )
-        self.assertEqual(result.at, 0.0)
+        self.assertEqual(result.event_time, 0.0)
         self.assertEqual(result.unread_count, 0)
         self.assertEqual(result.unread_seq, 0)
 
@@ -133,6 +151,24 @@ class AdapterTest(unittest.TestCase):
         )
         self.assertEqual(event.extras["_seekmemory_runtime_action"], "observe")
         self.assertEqual(event.extras["_seekmemory_runtime_reason"], "ambient_message")
+
+    def test_accepted_cursor_survives_reply_metadata_binding(self) -> None:
+        event = Event(False)
+        receipt = UserRunReceipt(
+            RunDecision(WakeAction.REPLY, "direct_attention"),
+            "u1", "t1", read_through_seq=7,
+        )
+        AstrBotRuntimeAdapter.bind_user(event, receipt)
+        AstrBotRuntimeAdapter.bind_reply(event, SimpleNamespace(
+            turn_id="t1", assistant_source_id="a1", response_chars=2,
+        ))
+        self.assertEqual(AstrBotRuntimeAdapter.read_through_seq(event), 7)
+
+    def test_missing_or_invalid_cursor_is_not_an_acknowledgement(self) -> None:
+        event = Event(False)
+        for value in (None, "7", -1, True):
+            event.set_extra("_seekmemory_read_through_seq", value)
+            self.assertIsNone(AstrBotRuntimeAdapter.read_through_seq(event))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import json
 import time
 from pathlib import Path
@@ -20,9 +22,8 @@ from ..app.runtime import (
     JsonStateStore,
     JsonlEpisodeStore,
     MemoryContext,
+    MemoryContextRequest,
     RunContext,
-    RunRecorder,
-    RuntimeInput,
     RuntimeWorker,
     Scheduler,
     ToolPolicy,
@@ -43,7 +44,6 @@ from ..services import (
     ServiceCollection,
     StatusService,
 )
-from ..perceive.buffer import Buffer
 from ..perceive.model import ProviderChatModel
 from ..recall.retriever import HybridRetriever
 from ..adapters.astrbot_actions import AstrBotActionPort
@@ -56,10 +56,13 @@ from ..webui.jobs import Jobs
 from ..webui.journal import Journal
 from ..webui.routes import WebRoutes
 from ..webui.trace import Trace
+from .astrbot_attention import AttentionHooks
 from .astrbot_hooks import AstrBotHooks
 from .persona_packs import FilePersonaPacks
+from .astrbot_runtime import AstrBotRuntimeAdapter
+from .astrbot_time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
 
-class AstrBotPlugin(AstrBotHooks):
+class AstrBotPlugin(AttentionHooks, AstrBotHooks):
     """Composition root and lifecycle owner for the AstrBot host.
 
     Event handlers live in ``adapters.astrbot_hooks``. This class only builds
@@ -77,7 +80,7 @@ class AstrBotPlugin(AstrBotHooks):
         self.tree: Tree | None = None
         self.graph: Graph | None = None
         self.hybrid_retriever: HybridRetriever | None = None
-        self.buffer: Buffer | None = None
+        self.buffer: AstrBotBuffer | None = None
         self.checkpoint: CheckpointManager | None = None
         self.budget = budget_from_config(self._c)
         self.dream: DreamCycle | None = None
@@ -90,9 +93,22 @@ class AstrBotPlugin(AstrBotHooks):
         self.capacity: CapacityGovernor | None = None
         self._last_runtime_prune_at = 0.0
         self._started = False
+        self._lifecycle_lock = asyncio.Lock()
+        self.actions = None
+        self.episode_recorder = None
         self.web = None
 
     async def start(self) -> None:
+        async with self._lifecycle_lock:
+            if self._started:
+                return
+            try:
+                await self._start()
+            except BaseException:
+                await self._finish_stop()
+                raise
+
+    async def _start(self) -> None:
         if self._started:
             return
         self.ready = False
@@ -127,6 +143,9 @@ class AstrBotPlugin(AstrBotHooks):
         self.capacity = CapacityGovernor(self._thresholds(artifact_limit))
         self._last_runtime_prune_at = 0.0
         self._init_engine()
+        if not self.ready:
+            await self._stop()
+            return
         recall = RecallService(
             cache=self.cache,
             graph=self.graph,
@@ -158,7 +177,7 @@ class AstrBotPlugin(AstrBotHooks):
             self.episode_recorder = EpisodeRecorder(
                 JsonlEpisodeStore(str(self.data_path.parent / "runtime_episodes.jsonl"))
             )
-        recorder = RunRecorder(
+        recorder = AstrBotRunRecorder(
             sources=self.store.sources if self.store is not None else None,
             buffer=self.buffer,
             checkpoint=self.checkpoint,
@@ -216,7 +235,7 @@ class AstrBotPlugin(AstrBotHooks):
         ingest = IngestService(
             buffer=self.buffer,
             artifacts=self.store.artifacts if self.store is not None else None,
-            sources=self.store.sources if self.store is not None else None,
+            sources=AstrBotSourceView(self.store.sources) if self.store is not None else None,
             extraction=self.store.extraction if self.store is not None else None,
             cache=self.cache,
             graph=self.graph,
@@ -244,6 +263,8 @@ class AstrBotPlugin(AstrBotHooks):
             interval_seconds=lambda: float(self._c("runtime_tick_seconds", 5)),
             max_attempts=lambda: int(self._c("runtime_dispatch_max_attempts", 3)),
             base_seconds=lambda: float(self._c("runtime_dispatch_backoff_seconds", 2)),
+            trace=self.trace,
+            clock=time.time,
         )
         background = BackgroundService(
             jobs=self.jobs,
@@ -277,9 +298,9 @@ class AstrBotPlugin(AstrBotHooks):
             runtime=runtime,
             runtime_worker=runtime_worker,
         )
-        self._started = True
         self.web = WebRoutes(self)
         self.web.register()
+        self._started = True
 
     def _c(self, key: str, default):
         try:
@@ -329,7 +350,7 @@ class AstrBotPlugin(AstrBotHooks):
             self.tree = Tree(self.store.artifacts, self.cache)
             self.graph = Graph(self.store.artifacts)
             self.hybrid_retriever = HybridRetriever(self.graph, self.cache)
-            self.buffer = Buffer(
+            self.buffer = AstrBotBuffer(
                 str(self.data_path.parent / "pending.json"), extraction=self.store.extraction
             )
             migrated = self.buffer.migrate_legacy()
@@ -359,12 +380,13 @@ class AstrBotPlugin(AstrBotHooks):
                 f"待抽取 {len(self.buffer.items)} 条"
             )
         except Exception as e:  # noqa: BLE001
+            self.ready = False
             self.journal.record("plugin", "failed", "记忆引擎初始化失败", error=e)
-            logger.error(f"[seekmemory] 初始化失败，记忆功能降级：{e}")
+            logger.error(f"[seekmemory] 初始化失败，记忆功能降级：{type(e).__name__}")
 
-    def _runtime_memory_context(self, event: RuntimeInput) -> MemoryContext:
+    def _runtime_memory_context(self, request: MemoryContextRequest) -> MemoryContext:
         block, info = self._recall_block(
-            event.text, event.session_id, event.private, event.speaker_id
+            request.query, request.session_id, request.private, request.speaker_id
         )
         return MemoryContext(text=block, info=info)
 
@@ -389,24 +411,49 @@ class AstrBotPlugin(AstrBotHooks):
         )
 
     async def stop(self) -> None:
-        if not self._started:
-            return
+        async with self._lifecycle_lock:
+            await self._finish_stop()
+
+    async def _finish_stop(self) -> None:
+        cleanup = asyncio.create_task(self._stop())
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            await cleanup
+            raise
+
+    async def _stop(self) -> None:
         self.ready = False
-        if self.services is not None:
-            await self.services.background_service.stop()
-        if self.jobs is not None:
-            await self.jobs.close()
-        if self.web is not None:
-            self.web.close()
-        if self.buffer is not None:
-            self.buffer.save()
-        if self.checkpoint is not None:
-            self.checkpoint.flush()
-        if self.store is not None:
-            self.store.close()
-            self.store = None
-        self.journal.record("plugin", "stopped", "plugin resources released")
+        operations = [
+            (self.services.background_service, "stop") if self.services else (None, "stop"),
+            (self.jobs, "close"), (self.web, "close"), (self.buffer, "save"),
+            (self.checkpoint, "flush"), (self.store, "close"),
+        ]
+        cancellation = None
+        for resource, method in operations:
+            if resource is None:
+                continue
+            try:
+                result = getattr(resource, method)()
+                if inspect.isawaitable(result):
+                    await result
+            except asyncio.CancelledError as exc:
+                cancellation = exc
+            except Exception as exc:
+                if self.journal is not None:
+                    self.journal.record("plugin", "failed", "resource cleanup failed", error=exc)
+        if self.journal is not None and any(resource is not None for resource, _ in operations):
+            self.journal.record("plugin", "stopped", "plugin resources released")
+        for name in (
+            "services", "store", "cache", "tree", "graph", "hybrid_retriever",
+            "buffer", "checkpoint", "dream", "jobs", "web", "actions",
+            "episode_recorder", "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
+        ):
+            setattr(self, name, None)
+        self._self_id = ""
         self._started = False
+        if cancellation is not None:
+            raise cancellation
 
     def _reload_buffer(self) -> None:
         if self.buffer is not None:
@@ -420,5 +467,6 @@ class AstrBotPlugin(AstrBotHooks):
             text=str(source.get("text") or "").strip(),
             source_id=str(source.get("id") or ""),
             bot_id=str(getattr(self, "_self_id", "") or "bot"),
-            at=now,
+            event_time=AstrBotRuntimeAdapter.source_event_time(source),
+            received_at=now,
         )

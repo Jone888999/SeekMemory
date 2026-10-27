@@ -11,6 +11,7 @@ LAYERS: dict[str, tuple[str, ...]] = {
         "test_agent_runtime.py",
         "test_architecture_boundaries.py",
         "test_artifact.py",
+        "test_attention_policy.py",
         "test_bm25.py",
         "test_calling.py",
         "test_capacity.py",
@@ -26,6 +27,7 @@ LAYERS: dict[str, tuple[str, ...]] = {
         "test_persona.py",
         "test_persona_bootstrap.py",
         "test_persona_injection.py",
+        "test_persona_lifecycle_contract.py",
         "test_persona_synthesis.py",
         "test_persona_synthesis_edges.py",
         "test_scope.py",
@@ -38,9 +40,17 @@ LAYERS: dict[str, tuple[str, ...]] = {
     "contract": (
         "test_api_contract.py",
         "test_public_interfaces.py",
+        "test_runtime_host_contract.py",
+    ),
+    # Host-port conformance: 任何宿主实现都必须通过（见 app/ports.py）。
+    "conformance": (
+        "test_host_ports_conformance.py",
     ),
     "integration": (
         "test_absorb.py",
+        "test_attention_e2e.py",
+        "test_astrbot_time.py",
+        "test_dream_eval.py",
         "test_e2e_kernel.py",
         "test_continuity.py",
         "test_failure_recovery.py",
@@ -58,10 +68,16 @@ LAYERS: dict[str, tuple[str, ...]] = {
         "test_self_impression.py",
         "test_reinforcement.py",
         "test_runtime_actions.py",
+        "test_runtime_plugin.py",
         "test_run_recorder.py",
         "test_runtime_scheduler.py",
         "test_runtime_tool_guard.py",
         "test_runtime_adapter.py",
+        "test_runtime_contracts.py",
+        "test_runtime_host_ports.py",
+        "test_runtime_delivery.py",
+        "test_runtime_recovery.py",
+        "test_runtime_worker.py",
         "test_temporal.py",
         "test_webui.py",
         "test_console.py",
@@ -76,7 +92,7 @@ LAYERS: dict[str, tuple[str, ...]] = {
     ),
 }
 
-ALL_LAYERS = ("unit", "contract", "integration", "host", "smoke")
+ALL_LAYERS = ("unit", "contract", "conformance", "integration", "host", "smoke")
 
 
 def files_for(layer: str) -> tuple[str, ...]:
