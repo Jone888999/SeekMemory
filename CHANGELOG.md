@@ -11,6 +11,8 @@
 - 新增 `AgentRuntime.schedule_proactive()` 和 AstrBot `proactive_idle_seconds` 排期入口；主动策略从纯策略接到真实 worker。宿主发送动作也进入 action ledger，成功/失败均形成无正文终态。
 - 将 AgentRuntime 默认注意力收敛为单一 `DefaultAttentionPolicy`：主人/私聊/直接提及回复，非主人直接提及后按说话人保留 3 轮后续回复；移除默认路径中的额度、preset、阈值、关系/热度信号和场景提示，策略结果只通过 `AttentionDecision` 向 Runtime 返回通用状态补丁。
 
+- 收口 Runtime action 链路：新增 `ActionExecutor` 统一 attempt/terminal 与 `ActionPort` 执行，`ActionMessageSender` 仅作为 `SEND_TEXT` 兼容适配器；AstrBot 发送/工具审计统一走 ActionExecutor，不再直接操作 ledger。
+
 ### English
 
 - Fix Source recall recency ranking when offset-aware timestamps are mixed with local time: score actual elapsed time instead of treating recent messages as old. Naive timestamps use local time; stored data and configuration are unchanged.
@@ -19,6 +21,8 @@
 - Extend `runtime_episodes` with content-free action attempts and terminal outcomes. Duplicate callbacks are idempotent, each action keeps at most one terminal outcome, and existing retention cleanup applies.
 - Add `AgentRuntime.schedule_proactive()` and the AstrBot `proactive_idle_seconds` scheduling entry so the pure proactive policy reaches the real worker. Host send actions now enter the action ledger with content-free success/failure terminals.
 - Collapse the default AgentRuntime attention path to one `DefaultAttentionPolicy`: owner, private, and direct attention reply; a non-owner direct interaction retains a per-speaker three-round follow-up window; quota, presets, thresholds, relationship/heat signals, and scene hints are removed from the default path. Policy results return a generic state patch through `AttentionDecision`.
+
+- Collapse the runtime action path: `ActionExecutor` now owns attempt/terminal coordination around `ActionPort`, while `ActionMessageSender` is only a `SEND_TEXT` compatibility adapter. AstrBot send/tool audit now goes through ActionExecutor instead of touching the ledger directly.
 
 ## 0.4.3 — 2026-10-27
 

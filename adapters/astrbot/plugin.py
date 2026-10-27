@@ -23,6 +23,7 @@ from ...app.runtime import (
     JsonlEpisodeStore,
     MemoryContext,
     MemoryContextRequest,
+    ActionExecutor,
     ActionLedger,
     DefaultAttentionPolicy,
     DefaultProactivePolicy,
@@ -104,6 +105,7 @@ class AstrBotPlugin(star.Star):
         self.actions = None
         self.episode_recorder = None
         self.action_ledger = None
+        self.action_executor = None
         self.web = None
 
     async def start(self) -> None:
@@ -186,12 +188,16 @@ class AstrBotPlugin(star.Star):
             ActionLedger(RepoActionSink(self.store.runtime_episodes))
             if self.store is not None else None
         )
+        self.action_executor = ActionExecutor(
+            self.actions, self.action_ledger, clock=self.clock
+        )
         recorder = AstrBotRunRecorder(
             sources=self.store.sources if self.store is not None else None,
             buffer=self.buffer,
             checkpoint=self.checkpoint,
             episodes=self.episode_recorder,
             cache=self.cache,
+            clock=self.clock,
         )
         runtime = AgentRuntime(
             state_store,
@@ -204,7 +210,7 @@ class AstrBotPlugin(star.Star):
                 if bool(self._c("runtime_gate_enabled", False)) else 0
             ),
             model_gateway=AstrBotModelGateway(self.context),
-            message_sender=self.actions,
+            action_executor=self.action_executor,
             recorder=recorder,
         )
         if self.store is not None:
@@ -463,7 +469,8 @@ class AstrBotPlugin(star.Star):
         for name in (
             "services", "store", "cache", "tree", "graph", "hybrid_retriever",
             "buffer", "checkpoint", "dream", "jobs", "web", "actions",
-            "episode_recorder", "action_ledger", "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
+            "episode_recorder", "action_ledger", "action_executor",
+            "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
         ):
             setattr(self, name, None)
         self._self_id = ""

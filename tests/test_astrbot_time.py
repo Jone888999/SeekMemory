@@ -37,7 +37,7 @@ class AstrBotTimeTest(unittest.TestCase):
             self.assertEqual(utc8_time_hook(raw, projection=True), raw)
             self.assertEqual(utc8_timestamp(raw), 0)
         before = time.time()
-        written = utc8_time_hook(now=True)
+        written = utc8_time_hook(now=True, clock=lambda: before)
         self.assertTrue(written.endswith("+08:00"))
         self.assertAlmostEqual(utc8_timestamp(written), before, delta=2)
 

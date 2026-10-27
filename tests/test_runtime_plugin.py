@@ -108,7 +108,7 @@ class HostHookActionTest(unittest.TestCase):
             def __init__(self):
                 self.finished = []
 
-            def begin(self, **kwargs):
+            def begin(self, request, **kwargs):
                 return SimpleNamespace(action_id="send-action")
 
             def finish(self, record, status, **kwargs):
@@ -125,12 +125,12 @@ class HostHookActionTest(unittest.TestCase):
                 self.extras[key] = value
 
         hook = AstrBotHooks()
-        hook.action_ledger = Ledger()
+        hook.action_executor = Ledger()
         event = ExtraEvent()
         hook._begin_send_action(event, "s1", "run-1", "turn-1")
         self.assertIsNotNone(event.get_extra("_seekmemory_send_action"))
         hook._finish_send_action(event, ActionStatus.SUCCEEDED)
-        self.assertEqual(hook.action_ledger.finished, [("send-action", ActionStatus.SUCCEEDED)])
+        self.assertEqual(hook.action_executor.finished, [("send-action", ActionStatus.SUCCEEDED)])
 
     def test_tool_hooks_use_action_ledger_without_payload(self):
         class Ledger:
@@ -138,8 +138,8 @@ class HostHookActionTest(unittest.TestCase):
                 self.started = []
                 self.finished = []
 
-            def begin(self, **kwargs):
-                self.started.append(kwargs)
+            def begin(self, request, **kwargs):
+                self.started.append((request, kwargs))
                 return SimpleNamespace(action_id="action-1")
 
             def finish(self, record, status, **kwargs):
@@ -183,19 +183,19 @@ class HostHookActionTest(unittest.TestCase):
         hook.run_tracer = Tracer()
         hook.trace = Trace()
         hook.tool_policy = ToolPolicy(("memory_",))
-        hook.action_ledger = Ledger()
+        hook.action_executor = Ledger()
         event = Event()
         tool = SimpleNamespace(name="memory_search", id="call-1")
         asyncio.run(hook.observe_tool(event, tool, {"query": "private"}))
-        self.assertEqual(len(hook.action_ledger.started), 1)
-        self.assertNotIn("private", str(hook.action_ledger.started[0]))
+        self.assertEqual(len(hook.action_executor.started), 1)
+        self.assertNotIn("private", str(hook.action_executor.started[0]))
         asyncio.run(
             hook.observe_tool_result(
                 event, tool, {}, SimpleNamespace(status="ok")
             )
         )
-        self.assertEqual(len(hook.action_ledger.finished), 1)
-        self.assertEqual(hook.action_ledger.finished[0][1].value, "succeeded")
+        self.assertEqual(len(hook.action_executor.finished), 1)
+        self.assertEqual(hook.action_executor.finished[0][1].value, "succeeded")
 
 
 if __name__ == "__main__":

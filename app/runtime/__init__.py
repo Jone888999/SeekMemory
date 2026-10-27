@@ -40,7 +40,13 @@ from .episode import (
     normalize_tool_calls,
     safe_error_code,
 )
-from .actions import ActionLedger, RepoActionSink, action_idempotency_key
+from .actions import (
+    ActionExecutor,
+    ActionLedger,
+    ActionMessageSender,
+    RepoActionSink,
+    action_idempotency_key,
+)
 from .attention import DefaultAttentionPolicy
 from .recorder import RecordedReply, RecordedTurn, RunRecorder
 from .proactive import (
@@ -67,7 +73,9 @@ from .worker import RuntimeWorker
 
 __all__ = [
     "ActionKind",
+    "ActionExecutor",
     "ActionLedger",
+    "ActionMessageSender",
     "ActionPort",
     "ActionRecord",
     "ActionRequest",
