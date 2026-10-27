@@ -36,10 +36,12 @@ class AstrBotRuntimeAdapter:
     def from_event(event, text: str, umo: str, sender: str,
                    unread_count: int = 0, unread_seq: int = 0,
                    received_at: float | None = None, owner_id: str = "",
-                   names: tuple[str, ...] = ()) -> RuntimeInput:
+                   names: tuple[str, ...] = (),
+                   clock=None) -> RuntimeInput:
         mapped = to_runtime_input(
             event, session_id=umo, owner_id=owner_id, names=names,
             unread_count=unread_count, unread_seq=unread_seq, received_at=received_at,
+            clock=clock,
         )
         value = str(text or "")
         return replace(

@@ -64,6 +64,12 @@ class AdapterTest(unittest.TestCase):
             0.0,
         )
 
+    def test_received_at_uses_injected_host_clock(self) -> None:
+        result = AstrBotRuntimeAdapter.from_event(
+            Event(False), "ambient", "g1", "u1", clock=lambda: 42.5
+        )
+        self.assertEqual(result.received_at, 42.5)
+
     def test_event_timestamp_and_unread_watermark_are_mapped(self) -> None:
         event = Event(False)
         event.created_at = 123.5

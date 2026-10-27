@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
@@ -17,6 +15,7 @@ class AttentionHooks:
 
     def __init__(self, host=None) -> None:
         self.host = host
+        self.clock = getattr(host, "clock", None) or (lambda: 0.0)
 
     def __getattr__(self, name):
         host = self.__dict__.get("host")
@@ -60,10 +59,11 @@ class AttentionHooks:
                 session_id=str(getattr(event, "unified_msg_origin", "") or ""),
                 owner_id=self._owner_id(),
                 names=self._address_names(),
+                clock=self.clock,
             )
             if not mapped.text:
                 return
-            decision = self._runtime_decision(event, mapped, time.time())
+            decision = self._runtime_decision(event, mapped, self.clock())
             self.journal.record(
                 "attention",
                 "reply" if decision.action is WakeAction.REPLY else "stop",

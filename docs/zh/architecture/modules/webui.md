@@ -2,7 +2,7 @@
 
 ## 分层
 
-- webui/routes.py 注册 AstrBot 插件管理路由，做请求认证、方法/请求体限制、状态码映射和服务调用。
+- `webui/` 只保留宿主无关的 jobs、journal 和 trace；AstrBot 管理路由位于 `adapters/astrbot/web.py`，由适配层负责认证、方法和状态码映射。
 - services/management_service.py 实现框架无关的目录、详情、编辑、人格 bootstrap/rollback 和召回诊断用例。
 - dashboard/ 是 React/TypeScript 管理界面，按 memory library、control/diagnostics/logs/run-traces/persona evidence 等工作区组织状态与视图。
 - AstrBot 页面桥接器把已认证的宿主请求送到插件 API；静态页面和 mock 模式不连接真实数据库。

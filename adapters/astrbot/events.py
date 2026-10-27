@@ -9,8 +9,7 @@
 from __future__ import annotations
 
 import math
-import time
-from typing import Any
+from typing import Any, Callable
 
 try:
     from ...app.runtime.contracts import RuntimeInput
@@ -88,6 +87,7 @@ def to_runtime_input(
     unread_count: int = 0,
     unread_seq: int = 0,
     received_at: float | None = None,
+    clock: Callable[[], float] | None = None,
 ) -> RuntimeInput:
     """把一个宿主事件映射成运行时输入；字段缺失时按保守默认值处理。"""
     text = _text(event)
@@ -97,7 +97,10 @@ def to_runtime_input(
         session_id=str(session_id or getattr(event, "unified_msg_origin", "") or ""),
         text=text,
         event_time=_at(event),
-        received_at=time.time() if received_at is None else received_at,
+        received_at=(
+            float(clock()) if received_at is None and clock is not None else
+            (0.0 if received_at is None else received_at)
+        ),
         speaker_id=_identity(event, "sender_id", "get_sender_id"),
         private=scene == "private",
         mentioned=_mentioned(event),
