@@ -56,6 +56,7 @@ from .state import (
     JsonStateStore,
     RepoStateStore,
 )
+from .topics import TopicCandidate, TopicSource
 from .tools import (
     ToolCall,
     ToolGuardDecision,
@@ -113,6 +114,8 @@ __all__ = [
     "DueRun",
     "Scheduler",
     "TimingPolicy",
+    "TopicCandidate",
+    "TopicSource",
     "TraceSink",
     "RunDecision",
     "WakeAction",

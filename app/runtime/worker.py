@@ -8,6 +8,7 @@ from typing import Callable
 from .contracts import Clock, ProactiveDecision, ProactivePolicy, RunContext, RunResult, TraceSink
 from .runtime import AgentRuntime
 from .scheduler import Scheduler
+from .topics import TopicCandidate, TopicSource
 
 
 class RuntimeWorker:
@@ -33,6 +34,7 @@ class RuntimeWorker:
         clock: Clock | None = None,
         proactive_policy: ProactivePolicy | None = None,
         proactive_max_fanout: int = 5,
+        topic_source: TopicSource | None = None,
     ) -> None:
         self.runtime = runtime
         self.scheduler = scheduler
@@ -47,6 +49,7 @@ class RuntimeWorker:
         self.clock = clock
         self.proactive_policy = proactive_policy
         self.proactive_max_fanout = max(0, int(proactive_max_fanout))
+        self.topic_source = topic_source
         self._dispatching: set[str] = set()
         self._semaphores: dict[object, asyncio.Semaphore] = {}
 
@@ -99,11 +102,24 @@ class RuntimeWorker:
         finally:
             self._dispatching.discard(session_id)
 
+    def _topic_for(self, session_id: str, now: float) -> TopicCandidate | None:
+        if self.topic_source is None:
+            return None
+        try:
+            candidates = self.topic_source.candidates(
+                session_id, now=now, limit=1
+            )
+        except Exception as exc:  # noqa: BLE001 - source failure skips proactive
+            self._record_failure("proactive_topic_failed", exc, session_id)
+            return None
+        return candidates[0] if candidates else None
+
     async def dispatch_proactive(
         self,
         session_id: str,
         decision: ProactiveDecision,
         now: float | None = None,
+        topic: TopicCandidate | None = None,
     ) -> RunResult | None:
         if not self.enabled() or session_id in self._dispatching:
             return None
@@ -114,7 +130,10 @@ class RuntimeWorker:
                 if not self.enabled():
                     return None
                 return await self.runtime.dispatch_proactive(
-                    self.run_context(session_id, moment), decision, now=moment
+                    self.run_context(session_id, moment),
+                    decision,
+                    topic=topic,
+                    now=moment,
                 )
         finally:
             self._dispatching.discard(session_id)
@@ -156,9 +175,19 @@ class RuntimeWorker:
         for candidate in plan.selected:
             if candidate.session_id in deferred_ids:
                 continue
+            topic = self._topic_for(candidate.session_id, moment)
+            if self.topic_source is not None and topic is None:
+                self._record_failure(
+                    "proactive_no_topic", RuntimeError("no_topic"),
+                    candidate.session_id,
+                )
+                clear = getattr(self.runtime, "clear_proactive", None)
+                if callable(clear):
+                    clear(candidate.session_id)
+                continue
             try:
                 result = await self.dispatch_proactive(
-                    candidate.session_id, candidate.decision, moment
+                    candidate.session_id, candidate.decision, moment, topic
                 )
             except Exception as exc:  # noqa: BLE001 - one run must not stop the tick
                 self._record_failure(

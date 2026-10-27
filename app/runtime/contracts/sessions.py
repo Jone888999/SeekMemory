@@ -15,7 +15,6 @@ class SessionState:
     last_spoke_at: float = 0.0
     quiet_until: float = 0.0
     wait_until: float = 0.0
-    cooldown_until: float = 0.0
     unread_count: int = 0
     last_unread_seq: int = 0
     read_through_seq: int = 0
@@ -25,13 +24,9 @@ class SessionState:
     last_dispatched_source_id: str = ""
     last_action: str = ""
     last_reason: str = ""
-    reply_cooldown_seconds: float = 30.0
     last_proactive_at: float = 0.0
     proactive_due_at: float = 0.0
     proactive_attempts: int = 0
-    last_action_at: float = 0.0
-    last_action_kind: str = ""
-    last_action_status: str = ""
     followup_by_speaker: dict[str, int] = field(default_factory=dict)
 
 
