@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from adapters.astrbot_time import (  # noqa: E402
+from adapters.astrbot.time import (  # noqa: E402
     AstrBotBuffer, AstrBotRunRecorder, utc8_time_hook, utc8_timestamp,
 )
 from app.runtime import AgentRuntime, InMemoryStateStore, RunContext, RuntimeInput  # noqa: E402

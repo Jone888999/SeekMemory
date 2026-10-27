@@ -16,7 +16,7 @@ from app.runtime import (  # noqa: E402
     normalize_tool_calls,
     safe_error_code,
 )
-from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
+from adapters.astrbot.runtime import AstrBotRuntimeAdapter  # noqa: E402
 
 
 class Tool:

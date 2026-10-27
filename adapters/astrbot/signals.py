@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import time
 
-from ..app.runtime.scene_hints import time_window
-from ..app.runtime.signals import Signals
+from ...app.runtime.scene_hints import time_window
+from ...app.runtime.signals import Signals
 
 MAX_MEMORY_SCAN = 150
 

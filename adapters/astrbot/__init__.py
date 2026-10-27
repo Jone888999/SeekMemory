@@ -1,0 +1,1 @@
+"""AstrBot host adapter package."""

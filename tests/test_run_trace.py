@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.runtime.tracing import RunTracer
 from app.runtime import AgentRuntime, MemoryContext
-from adapters.astrbot_runtime import AstrBotRuntimeAdapter
-from adapters.seekmemory_context import SeekMemoryContextAdapter
+from adapters.astrbot.runtime import AstrBotRuntimeAdapter
+from adapters.astrbot.context import SeekMemoryContextAdapter
 from store.run_trace import TraceStore
 
 
@@ -197,8 +197,8 @@ class RunTraceTests(unittest.TestCase):
         # Execute the production hook/plugin bodies without importing AstrBot.
         # This protects the mapping; it is NOT real-host integration verification.
         root = Path(__file__).resolve().parents[1]
-        hooks_source = ast.parse((root / "adapters" / "astrbot_hooks.py").read_text())
-        plugin_source = ast.parse((root / "adapters" / "astrbot_plugin.py").read_text())
+        hooks_source = ast.parse((root / "adapters" / "astrbot" / "hooks.py").read_text())
+        plugin_source = ast.parse((root / "adapters" / "astrbot" / "plugin.py").read_text())
         hooks_cls = next(
             n for n in hooks_source.body
             if isinstance(n, ast.ClassDef) and n.name == "AstrBotHooks"

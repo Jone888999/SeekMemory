@@ -99,7 +99,7 @@ class MainOwnershipTest(unittest.TestCase):
         ))
 
     def test_start_jobs_remains_the_astrbot_loaded_hook(self) -> None:
-        hooks = (ROOT / "adapters" / "astrbot_hooks.py").read_text(
+        hooks = (ROOT / "adapters" / "astrbot" / "hooks.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('"start_jobs": _register(', hooks)

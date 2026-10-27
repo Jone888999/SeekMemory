@@ -38,10 +38,10 @@ sys.modules.update({
 
 import importlib  # noqa: E402
 AstrBotPlugin = importlib.import_module(
-    f"{ROOT.name}.adapters.astrbot_plugin"
+    f"{ROOT.name}.adapters.astrbot.plugin"
 ).AstrBotPlugin
 AstrBotHooks = importlib.import_module(
-    f"{ROOT.name}.adapters.astrbot_hooks"
+    f"{ROOT.name}.adapters.astrbot.hooks"
 ).AstrBotHooks
 ToolPolicy = importlib.import_module(f"{ROOT.name}.app.runtime").ToolPolicy
 

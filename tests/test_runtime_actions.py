@@ -11,8 +11,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.astrbot_actions import AstrBotActionPort  # noqa: E402
-from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
+from adapters.astrbot.actions import AstrBotActionPort  # noqa: E402
+from adapters.astrbot.runtime import AstrBotRuntimeAdapter  # noqa: E402
 from app.runtime import (  # noqa: E402
     AgentRuntime,
     RepoEpisodeStore,

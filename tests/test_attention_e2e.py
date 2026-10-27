@@ -1,6 +1,6 @@
 """端到端策略测试：宿主事件 → RuntimeInput → 决策。
 
-用假的 AstrBot 事件对象走真实映射函数（adapters/astrbot_event.py），
+用假的 AstrBot 事件对象走真实映射函数（adapters/astrbot/events.py），
 验证"该不该回"整条链路，不依赖宿主运行时。这是 #123 验收的一部分；
 #116 合入后同一套夹具可换成真宿主边界。
 """
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
 
-from adapters.astrbot_event import to_runtime_input
+from adapters.astrbot.events import to_runtime_input
 from app.runtime.attention import AttentionPolicy, thresholds_from_config
 from app.runtime.contracts import SessionState, WakeAction
 from app.runtime.scene_hints import compose

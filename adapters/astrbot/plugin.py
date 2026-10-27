@@ -11,10 +11,10 @@ from pathlib import Path
 from astrbot.api import logger, star
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
-from ..app.budget import budget_from_config
-from ..app.checkpoint import CheckpointManager
-from ..app.dream import DreamCycle
-from ..app.runtime import (
+from ...app.budget import budget_from_config
+from ...app.checkpoint import CheckpointManager
+from ...app.dream import DreamCycle
+from ...app.runtime import (
     AgentRuntime,
     RepoEpisodeStore,
     RepoStateStore,
@@ -31,11 +31,11 @@ from ..app.runtime import (
     Scheduler,
     ToolPolicy,
 )
-from ..app.runtime.tracing import RunTracer
-from ..core.capacity import CapacityGovernor, CapacityThresholds, load_thresholds
-from ..core.graph import Graph
-from ..core.tree import Tree
-from ..services import (
+from ...app.runtime.tracing import RunTracer
+from ...core.capacity import CapacityGovernor, CapacityThresholds, load_thresholds
+from ...core.graph import Graph
+from ...core.tree import Tree
+from ...services import (
     AccessPolicy,
     AccessService,
     BackgroundService,
@@ -47,33 +47,33 @@ from ..services import (
     ServiceCollection,
     StatusService,
 )
-from ..perceive.model import ProviderChatModel
-from ..recall.retriever import HybridRetriever
-from ..adapters.astrbot_actions import AstrBotActionPort
-from ..adapters.astrbot_model import AstrBotModelGateway
-from ..adapters.seekmemory_context import SeekMemoryContextAdapter
-from ..store.cache import Cache
-from ..store import Store, open_store
-from ..store.run_trace import TraceStore
-from ..webui.jobs import Jobs
-from ..webui.journal import Journal
-from ..webui.routes import WebRoutes
-from ..webui.trace import Trace
-from .astrbot_attention import (
+from ...perceive.model import ProviderChatModel
+from ...recall.retriever import HybridRetriever
+from .actions import AstrBotActionPort
+from .model import AstrBotModelGateway
+from .context import SeekMemoryContextAdapter
+from ...store.cache import Cache
+from ...store import Store, open_store
+from ...store.run_trace import TraceStore
+from ...webui.jobs import Jobs
+from ...webui.journal import Journal
+from ...webui.routes import WebRoutes
+from ...webui.trace import Trace
+from .attention import (
     AttentionHooks,
     AttentionPolicy,
     AttentionRuntimePolicy,
     thresholds_from_config,
 )
-from .astrbot_signals import AstrBotSignals
-from .astrbot_hooks import AstrBotHooks
-from .astrbot_runtime import AstrBotRuntimeAdapter
-from .astrbot_time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
+from .signals import AstrBotSignals
+from .hooks import AstrBotHooks
+from .runtime import AstrBotRuntimeAdapter
+from .time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
 
 class AstrBotPlugin(AttentionHooks, AstrBotHooks):
     """Composition root and lifecycle owner for the AstrBot host.
 
-    Event handlers live in ``adapters.astrbot_hooks``. This class only builds
+    Event handlers live in ``adapters.astrbot.hooks``. This class only builds
     services, exposes the shared plugin state, and starts/stops background work.
     """
 

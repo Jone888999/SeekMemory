@@ -8,13 +8,13 @@ adapters translates AstrBot events, providers, and message sending into applicat
 
 On start, AstrBotPlugin builds Store, Cache, Tree, Graph, HybridRetriever, Source-backed Buffer, CheckpointManager, application services, AgentRuntime, Jobs, WebRoutes, and background services. On stop, it stops background and management tasks, unregisters its own routes, saves the buffer, flushes checkpoints, and finally closes Store.
 
-main.py defines the plugin entry point and delegates lifecycle; composition and wiring live in adapters/astrbot_plugin.py. AstrBotHooks in adapters/astrbot_hooks.py maps host hooks to service calls: access decisions, input acceptance, memory injection, assistant-reply capture, post-send delivery recording, and runtime/tool observation. It does not implement extraction, capacity, or maintenance algorithms.
+main.py defines the plugin entry point and delegates lifecycle; composition and wiring live in adapters/astrbot/plugin.py. AstrBotHooks in adapters/astrbot/hooks.py maps host hooks to service calls: access decisions, input acceptance, memory injection, assistant-reply capture, post-send delivery recording, and runtime/tool observation. It does not implement extraction, capacity, or maintenance algorithms.
 
 Start and stop share a lifecycle lock. Partial initialization releases resources already created. Shutdown waits for background and management tasks before saving buffers, flushing checkpoints, and closing storage, then clears services, workers, caches, and host references. Cancellation waits for cleanup before propagating, allowing a safe restart.
 
 ## Port adapters
 
-- AstrBotRuntimeAdapter reuses astrbot_event.to_runtime_input, preserving existing scene, role, addressed, thread, and message-ID fields, and manages event-extra values for user/reply Source IDs, turn IDs, final recall IDs, and episode deduplication. Event time and process receipt time are recorded separately.
+- AstrBotRuntimeAdapter reuses astrbot.events.to_runtime_input, preserving existing scene, role, addressed, thread, and message-ID fields, and manages event-extra values for user/reply Source IDs, turn IDs, final recall IDs, and episode deduplication. Event time and process receipt time are recorded separately.
 - AstrBotModelGateway provides ModelGateway for deferred replies.
 - AstrBotActionPort provides both ActionPort and MessageSender: execute accepts ActionRequest and returns ActionResult; the existing send method delegates to execute and returns a boolean.
 - ProviderChatModel wraps a host extraction/persona provider as ChatModel.
@@ -22,7 +22,7 @@ Start and stop share a lifecycle lock. Partial initialization releases resources
 
 Action request text is transient execution input, never an ActionRecord audit field. Unsupported actions return unsupported_action; empty text, missing sessions, unavailable hosts, rejected sends, and execution errors have fixed reason codes. Host exception messages are not returned; cancellation propagates so runtime can recover. The adapter reports execution results without owning retries, audit deduplication, or terminal-state decisions.
 
-AstrBot centralizes time conversion in utc8_time_hook in astrbot_time.py. User messages, normal replies, deferred replies, and runtime audit pass through this adapter hook before calling the existing RunRecorder. New timestamps use ISO strings with an explicit +08:00 offset; kernel read views retain the existing naive format. Fields, kernel interfaces, and database structure are unchanged.
+AstrBot centralizes time conversion in utc8_time_hook in astrbot/time.py. User messages, normal replies, deferred replies, and runtime audit pass through this adapter hook before calling the existing RunRecorder. New timestamps use ISO strings with an explicit +08:00 offset; kernel read views retain the existing naive format. Fields, kernel interfaces, and database structure are unchanged.
 
 AstrBotBuffer reuses Buffer admission and topic algorithms, while AstrBotSourceView reuses SourceStore queries. Both use the same hook for pending projections and recovered processed parents. Historical Sources are not rewritten. Offset-aware legacy values are converted; missing, invalid, and offset-free values are preserved without guessing the old machine's timezone or deriving absolute event time or queue age from them. Whether those old values were wrong, or derived memories need revision, requires a separate audit against the original environment.
 

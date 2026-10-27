@@ -101,9 +101,9 @@ class PackageTests(unittest.TestCase):
                     "main.py",
                     "app/checkpoint.py",
                     "app/contracts.py",
-                    "adapters/astrbot_hooks.py",
-                    "adapters/astrbot_plugin.py",
-                    "adapters/seekmemory_context.py",
+                    "adapters/astrbot/hooks.py",
+                    "adapters/astrbot/plugin.py",
+                    "adapters/astrbot/context.py",
                     "services/access_service.py",
                     "services/ingest_service.py",
                     "store/schema.sql",
@@ -224,7 +224,7 @@ class PackageTests(unittest.TestCase):
             "import sys\n"
             "from pathlib import Path\n"
             "sys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n"
-            "from adapters.seekmemory_context import SeekMemoryContextAdapter\n"
+            "from adapters.astrbot.context import SeekMemoryContextAdapter\n"
             "from app.runtime import MemoryContext, MemoryContextRequest\n"
             "context = SeekMemoryContextAdapter(lambda event: MemoryContext(\n"
             "    text='block', info={'final_ids': ('a1',)}\n"

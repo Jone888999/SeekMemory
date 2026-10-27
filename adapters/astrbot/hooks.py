@@ -12,11 +12,11 @@ import time
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
-from ..app.runtime.contracts import ActionKind, ActionStatus
-from ..app.runtime.tools import tool_result_failed
-from ..perceive.calls import log_call
-from .astrbot_attention import AttentionHooks
-from .astrbot_runtime import AstrBotRuntimeAdapter
+from ...app.runtime.contracts import ActionKind, ActionStatus
+from ...app.runtime.tools import tool_result_failed
+from ...perceive.calls import log_call
+from .attention import AttentionHooks
+from .runtime import AstrBotRuntimeAdapter
 
 
 class AstrBotHooks:

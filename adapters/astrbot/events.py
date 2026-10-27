@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 try:
-    from ..app.runtime.contracts import RuntimeInput
+    from ...app.runtime.contracts import RuntimeInput
 except ImportError:  # 作为顶层包导入（脚本 / 测试）
     from app.runtime.contracts import RuntimeInput
 
