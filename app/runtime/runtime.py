@@ -482,6 +482,27 @@ class AgentRuntime:
             response_chars=recorded.response_chars,
         )
 
+    def schedule_proactive(
+        self,
+        session_id: str,
+        delay_seconds: float,
+        *,
+        now: float | None = None,
+    ) -> SessionState:
+        """Arm the next proactive opportunity after user activity.
+
+        Hosts own the decision to schedule; the runtime only persists the
+        explicit due time consumed by ProactivePolicy and RuntimeWorker.
+        """
+        moment = self.clock() if now is None else float(now)
+        delay = max(0.0, float(delay_seconds))
+        state = self.store.get(session_id)
+        state.proactive_due_at = moment + delay
+        state.proactive_attempts = 0
+        state.last_seen_at = moment
+        self._save(state)
+        return state
+
     def clear_wait(self, session_id: str, now: float | None = None) -> SessionState:
         state = self.store.get(session_id)
         state.wait_until = 0.0

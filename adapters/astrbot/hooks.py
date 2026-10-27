@@ -176,6 +176,7 @@ class AstrBotHooks:
             except Exception:
                 pass
             AstrBotRuntimeAdapter.bind_user(event, receipt)
+            self._schedule_proactive(umo)
             AstrBotRuntimeAdapter.apply_decision(event, receipt.decision)
             AstrBotRuntimeAdapter.apply_llm_gate(
                 event,
@@ -183,6 +184,50 @@ class AstrBotHooks:
                 bool(self._c("runtime_gate_enabled", False)),
             )
         except Exception:
+            pass
+
+    def _schedule_proactive(self, session_id: str) -> None:
+        if not bool(self._c("proactive_enabled", False)):
+            return
+        try:
+            delay = float(self._c("proactive_idle_seconds", 1800))
+            schedule = getattr(self.services.runtime, "schedule_proactive", None)
+            if callable(schedule):
+                schedule(session_id, delay, now=time.time())
+        except Exception:  # noqa: BLE001 - proactive scheduling is fail-open
+            pass
+
+    def _begin_send_action(self, event, session_id: str, run_id: str, turn_id: str) -> None:
+        ledger = getattr(self, "action_ledger", None)
+        if ledger is None:
+            return
+        try:
+            record = ledger.begin(
+                session_id=session_id,
+                run_id=run_id,
+                callback_key=f"send:{turn_id or run_id}",
+                kind=ActionKind.SEND_TEXT,
+                at=time.time(),
+            )
+            AstrBotRuntimeAdapter.set_extra(
+                event, "_seekmemory_send_action", record
+            )
+        except Exception:  # noqa: BLE001 - audit must not break replies
+            pass
+
+    def _finish_send_action(self, event, status: ActionStatus, reason: str = "") -> None:
+        ledger = getattr(self, "action_ledger", None)
+        if ledger is None:
+            return
+        try:
+            record = AstrBotRuntimeAdapter.get_extra(
+                event, "_seekmemory_send_action", None
+            )
+            if record is None:
+                return
+            ledger.finish(record, status, at=time.time(), reason=reason)
+            AstrBotRuntimeAdapter.set_extra(event, "_seekmemory_send_action", None)
+        except Exception:  # noqa: BLE001
             pass
 
     async def capture_reply(self, event: AstrMessageEvent, response) -> None:
@@ -210,6 +255,12 @@ class AstrBotHooks:
             )
             if reply is not None:
                 AstrBotRuntimeAdapter.bind_reply(event, reply)
+                self._begin_send_action(
+                    event,
+                    str(getattr(event, "unified_msg_origin", "") or ""),
+                    self.run_tracer.run_id(event),
+                    reply.turn_id,
+                )
         except Exception:
             pass
 
@@ -234,6 +285,7 @@ class AstrBotHooks:
             assistant_source_id=assistant_source_id,
             read_through_seq=AstrBotRuntimeAdapter.read_through_seq(event),
         )
+        self._finish_send_action(event, ActionStatus.SUCCEEDED)
         AstrBotRuntimeAdapter.mark_episode_recorded(event)
         self._maybe_prune_runtime_episodes()
 
@@ -258,6 +310,7 @@ class AstrBotHooks:
         self.trace.record("runtime", "agent_done", {"role": role})
         if role != "err":
             return
+        self._finish_send_action(event, ActionStatus.FAILED, "agent_error")
         self.services.runtime.record_error(
             run_id=self.run_tracer.run_id(event),
             session_id=str(getattr(event, "unified_msg_origin", "") or ""),

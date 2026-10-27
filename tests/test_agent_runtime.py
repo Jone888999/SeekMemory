@@ -310,6 +310,19 @@ class WakePolicyTest(unittest.TestCase):
         runtime.observe(RuntimeInput("s1", "second", event_time=102), now=102)
         self.assertEqual(store.get("s1").wait_until, 107)
 
+    def test_schedule_proactive_arms_due_time_and_resets_attempts(self) -> None:
+        store = InMemoryStateStore()
+        state = store.get("s1")
+        state.proactive_attempts = 4
+        store.put(state)
+        runtime = AgentRuntime(store, clock=lambda: 100)
+
+        scheduled = runtime.schedule_proactive("s1", 30, now=100)
+
+        self.assertEqual(scheduled.proactive_due_at, 130.0)
+        self.assertEqual(scheduled.proactive_attempts, 0)
+        self.assertEqual(store.get("s1").proactive_due_at, 130.0)
+
     def test_delivery_clears_unread_and_updates_last_spoke(self) -> None:
         store = InMemoryStateStore()
         runtime = AgentRuntime(store, clock=lambda: 200)
