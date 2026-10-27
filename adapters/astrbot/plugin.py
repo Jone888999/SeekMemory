@@ -58,7 +58,7 @@ from ...store import Store, open_store
 from ...store.run_trace import TraceStore
 from ...webui.jobs import Jobs
 from ...webui.journal import Journal
-from ...webui.routes import WebRoutes
+from .web import WebRoutes
 from ...webui.trace import Trace
 from .attention import AttentionHooks
 from .hooks import AstrBotHooks
@@ -76,6 +76,7 @@ class AstrBotPlugin(star.Star):
         super().__init__(context, config)
         self.context = context
         self.cfg = config or {}
+        self.clock = time.time
         self.hooks = AstrBotHooks(self)
         self.attention = AttentionHooks(self)
         self.ready = False
@@ -195,7 +196,7 @@ class AstrBotPlugin(star.Star):
             state_store,
             policy=DefaultAttentionPolicy(),
             trace=self.trace,
-            clock=time.time,
+            clock=self.clock,
             memory_context=SeekMemoryContextAdapter(self._runtime_memory_context),
             wait_seconds=(
                 int(self._c("runtime_wait_seconds", 5))
@@ -213,7 +214,7 @@ class AstrBotPlugin(star.Star):
                 )
             except Exception:
                 pass
-            self._last_runtime_prune_at = time.time()
+            self._last_runtime_prune_at = self.clock()
             self.dream = DreamCycle(
                 self.store.dreams, self._c,
                 log=lambda msg: logger.info(f"[seekmemory] {msg}"),
@@ -272,7 +273,7 @@ class AstrBotPlugin(star.Star):
             max_attempts=lambda: int(self._c("runtime_dispatch_max_attempts", 3)),
             base_seconds=lambda: float(self._c("runtime_dispatch_backoff_seconds", 2)),
             trace=self.trace,
-            clock=time.time,
+            clock=self.clock,
             proactive_policy=DefaultProactivePolicy(
                 enabled=bool(self._c("proactive_enabled", False))
             ),

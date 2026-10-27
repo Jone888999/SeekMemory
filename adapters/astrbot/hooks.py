@@ -7,8 +7,6 @@ module path directly would leave them unbound after plugin reload.
 
 from __future__ import annotations
 
-import time
-
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
@@ -24,6 +22,7 @@ class AstrBotHooks:
 
     def __init__(self, host=None) -> None:
         self.host = host
+        self.clock = getattr(host, "clock", None) or (lambda: 0.0)
 
     def __getattr__(self, name):
         host = self.__dict__.get("host")
@@ -35,7 +34,7 @@ class AstrBotHooks:
         """Keep runtime audit bounded without doing work on every message."""
         if self.store is None:
             return
-        now = time.time()
+        now = self.clock()
         if now - self._last_runtime_prune_at < 60:
             return
         try:
@@ -97,6 +96,7 @@ class AstrBotHooks:
                 event, text, umo, str(event.get_sender_id()),
                 owner_id=getattr(self, "_owner_id", lambda: "")(),
                 names=getattr(self, "_address_names", lambda: ())(),
+                clock=self.clock,
             )
             context = self.services.runtime.build_context(runtime_input)
             block, info = context.text, context.info
@@ -151,6 +151,7 @@ class AstrBotHooks:
                 sender,
                 owner_id=getattr(self, "_owner_id", lambda: "")(),
                 names=getattr(self, "_address_names", lambda: ())(),
+                clock=self.clock,
             )
             decision = AstrBotRuntimeAdapter.get_extra(
                 event, "_seekmemory_attention_decision", None
@@ -193,7 +194,7 @@ class AstrBotHooks:
             delay = float(self._c("proactive_idle_seconds", 1800))
             schedule = getattr(self.services.runtime, "schedule_proactive", None)
             if callable(schedule):
-                schedule(session_id, delay, now=time.time())
+                schedule(session_id, delay, now=self.clock())
         except Exception:  # noqa: BLE001 - proactive scheduling is fail-open
             pass
 
@@ -207,7 +208,7 @@ class AstrBotHooks:
                 run_id=run_id,
                 callback_key=f"send:{turn_id or run_id}",
                 kind=ActionKind.SEND_TEXT,
-                at=time.time(),
+                at=self.clock(),
             )
             AstrBotRuntimeAdapter.set_extra(
                 event, "_seekmemory_send_action", record
@@ -225,7 +226,7 @@ class AstrBotHooks:
             )
             if record is None:
                 return
-            ledger.finish(record, status, at=time.time(), reason=reason)
+            ledger.finish(record, status, at=self.clock(), reason=reason)
             AstrBotRuntimeAdapter.set_extra(event, "_seekmemory_send_action", None)
         except Exception:  # noqa: BLE001
             pass
@@ -346,7 +347,7 @@ class AstrBotHooks:
                 run_id=self.run_tracer.run_id(event),
                 callback_key=key,
                 kind=ActionKind.TOOL_CALL,
-                at=time.time(),
+                at=self.clock(),
             )
             attempts[key] = record
         except Exception:  # noqa: BLE001 - audit failure must not break the run
@@ -367,7 +368,7 @@ class AstrBotHooks:
                 if tool_result_failed(tool_result)
                 else ActionStatus.SUCCEEDED
             )
-            ledger.finish(record, status, at=time.time())
+            ledger.finish(record, status, at=self.clock())
         except Exception:  # noqa: BLE001
             pass
 

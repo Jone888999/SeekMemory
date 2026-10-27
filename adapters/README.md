@@ -6,7 +6,7 @@
 
 | 文件 / 目录 | 宿主 | 语言 | 接入方式 |
 |---|---|---|---|
-| `astrbot/` package: `actions.py`, `hooks.py`, `model.py`, `plugin.py`, `runtime.py`, `context.py` | AstrBot | Python | 同进程，作为 `astrbot.api` 插件加载 |
+| `astrbot/` package: `actions.py`, `hooks.py`, `model.py`, `plugin.py`, `runtime.py`, `context.py`, `web.py` | AstrBot | Python | 同进程，作为 `astrbot.api` 插件加载 |
 | `dsh/` | DeepSeek Harness（DSH） | Node ESM（JavaScript） | 跨进程：本机 loopback JSON 契约 |
 
 AstrBot 是默认宿主与参考实现；`dsh/` 是第二个宿主，存在的意义是验证"内核是否真的宿主无关"——它跑在完全不同的语言与进程模型上。
@@ -30,7 +30,7 @@ DSH 不 import Python 模块，也不直接访问 store；它在线协议层对�
 
 ## 目录说明
 
-- `astrbot/`：AstrBot 的插件入口、钩子、模型桥与管理页注册；
+- `astrbot/`：AstrBot 的插件入口、钩子、模型桥与管理页注册（含 `web.py`）；
 - `astrbot/context.py`：AstrBot 侧的上下文组装；
 - `dsh/`：DSH 适配器，自带 `README.md`、`package.json`、`dsh.plugin.json`、mock 内核与测试套件。
 
