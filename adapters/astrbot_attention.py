@@ -15,7 +15,11 @@ import time
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
-from ..app.runtime.attention import AttentionPolicy, thresholds_from_config
+from ..app.runtime.attention import (
+    AttentionPolicy,
+    quota_gate,
+    thresholds_from_config,
+)
 from ..app.runtime.contracts import SessionState, WakeAction
 from ..app.runtime.scene_hints import compose, time_window
 from ..app.runtime.signals import Signals
@@ -46,6 +50,14 @@ class AttentionHooks:
             return bool(self._c("scene_hints_enabled", True))
         except Exception:  # noqa: BLE001
             return False
+
+    def _address_names(self) -> tuple[str, ...]:
+        """可被叫的名字；配置逗号分隔，默认大肥鱼。"""
+        try:
+            raw = str(self._c("attention_address_names", "大肥鱼,肥鱼") or "")
+        except Exception:  # noqa: BLE001
+            raw = "大肥鱼,肥鱼"
+        return tuple(part.strip() for part in raw.split(",") if part.strip())
 
     def _owner_id(self) -> str:
         try:
@@ -133,23 +145,20 @@ class AttentionHooks:
         self, mapped, event: AstrMessageEvent, decision, signals, policy
     ) -> bool:
         """返回是否放行；额度按 (会话, 说话人) 复用 SessionState。"""
-        if decision.action is WakeAction.REPLY and (
-            mapped.private or mapped.is_owner
-        ):
-            return True
-        if decision.action is WakeAction.REPLY and (mapped.mentioned or mapped.addressed):
-            # 被点名：重新给一次额度
-            quota = self._quota_for(signals, policy)
-            self._save_quota(mapped, max(0, quota - 1))
-            return quota > 0
-        if decision.action is WakeAction.REPLY:
-            state = self.services.runtime.store.get(self._quota_key(mapped))
-            remaining = int(state.unread_count or 0)
-            if remaining <= 0:
-                return False
-            self._save_quota(mapped, remaining - 1)
-            return True
-        return False
+        state = self.services.runtime.store.get(self._quota_key(mapped))
+        remaining = int(state.unread_count or 0)
+        result = quota_gate(
+            action=decision.action,
+            private=mapped.private,
+            owner=mapped.is_owner,
+            mentioned=mapped.mentioned,
+            addressed=mapped.addressed,
+            remaining=remaining,
+            quota=self._quota_for(signals, policy),
+        )
+        if result.remaining != remaining or mapped.mentioned or mapped.addressed:
+            self._save_quota(mapped, result.remaining)
+        return result.allow
 
     def _quota_key(self, mapped) -> str:
         return f"{mapped.session_id}#{mapped.speaker_id}"
@@ -177,6 +186,7 @@ class AttentionHooks:
                 event,
                 session_id=str(getattr(event, "unified_msg_origin", "") or ""),
                 owner_id=self._owner_id(),
+                names=self._address_names(),
             )
             if not mapped.text:
                 return
@@ -214,6 +224,7 @@ class AttentionHooks:
                 event,
                 session_id=str(getattr(event, "unified_msg_origin", "") or ""),
                 owner_id=self._owner_id(),
+                names=self._address_names(),
             )
             state = self.services.runtime.store.get(mapped.session_id)
             text = compose(mapped, self._signals(mapped, state), time.localtime().tm_hour)
