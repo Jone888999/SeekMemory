@@ -120,7 +120,7 @@ export class KernelClient {
     }
   }
 
-  async #call(pathname, { method = 'GET', body, timeoutMs, query } = {}) {
+  async #call(pathname, { method = 'GET', body, timeoutMs, query, signal } = {}) {
     const ep = await this.#endpoint();
     if (!ep) {
       // 用 #endpoint 记下的原因，不再重复读文件（重复读会导致误判成 kernel_down）
@@ -152,7 +152,7 @@ export class KernelClient {
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(ms),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms),
       });
 
       if (res.status === 204) {
@@ -181,8 +181,8 @@ export class KernelClient {
 
   // ---------- 契约端点 ----------
 
-  async health() {
-    const r = await this.#call('/healthz', { timeoutMs: 1000 });
+  async health(signal) {
+    const r = await this.#call('/healthz', { timeoutMs: 1000, signal });
     if (!r.ok) return r;
     const got = Number(r.data?.host_contract ?? 0);
     if (got !== this.#cfg.hostContract) {
@@ -196,6 +196,18 @@ export class KernelClient {
 
   capture(payload) {
     return this.#call('/capture', { method: 'POST', body: payload, timeoutMs: this.#cfg.captureTimeoutMs });
+  }
+
+  runtimeEvent(payload, signal) {
+    return this.#call('/runtime/events', {
+      method: 'POST', body: payload, timeoutMs: this.#cfg.captureTimeoutMs, signal,
+    });
+  }
+
+  runtimeContext(payload, signal) {
+    return this.#call('/runtime/context', {
+      method: 'POST', body: payload, timeoutMs: this.#cfg.recallTimeoutMs, signal,
+    });
   }
 
   recall({ query, subjectKey }) {

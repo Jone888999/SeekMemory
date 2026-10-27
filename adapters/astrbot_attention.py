@@ -217,7 +217,7 @@ class AttentionHooks:
 
     async def inject_scene_hints(self, event: AstrMessageEvent, req) -> None:
         """把时间/身份/亲疏提示追加到系统提示，替代 persona_gate 的提示部分。"""
-        if not self._scene_hints_enabled() or self.services is None:
+        if not self.ready or not self._scene_hints_enabled() or self.services is None:
             return
         try:
             mapped = to_runtime_input(

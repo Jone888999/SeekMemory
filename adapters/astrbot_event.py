@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import math
+import time
 from typing import Any
 
 try:
@@ -40,9 +42,25 @@ def _scene(event: Any) -> str:
     return "group"
 
 
+def _identity(event: Any, attribute: str, getter: str = "") -> str:
+    try:
+        return str(getattr(event, attribute, "") or getattr(event, getter, lambda: "")() or "")
+    except Exception:  # host metadata must not break input capture
+        return ""
+
+
+def event_id(event: Any) -> str:
+    """Use the platform message ID for all host callbacks."""
+    try:
+        return str(getattr(getattr(event, "message_obj", None), "message_id", "")
+                   or getattr(event, "message_id", "") or "")
+    except Exception:
+        return ""
+
+
 def _role(event: Any, owner_id: str) -> str:
     """主人优先；管理员角色由宿主给出。"""
-    sender = str(getattr(event, "sender_id", "") or getattr(event, "get_sender_id", lambda: "")())
+    sender = _identity(event, "sender_id", "get_sender_id")
     if owner_id and sender == owner_id:
         return "owner"
     role = str(getattr(event, "role", "") or "")
@@ -55,8 +73,9 @@ def _at(event: Any) -> float:
     """事件时间；取不到就返回 0，由运行时用当前时钟。"""
     value = getattr(event, "created_at", 0.0)
     try:
-        return float(value or 0.0)
-    except (TypeError, ValueError):
+        at = float(value or 0.0)
+        return at if math.isfinite(at) and at >= 0 else 0.0
+    except (TypeError, ValueError, OverflowError):
         return 0.0
 
 
@@ -68,32 +87,30 @@ def to_runtime_input(
     names: tuple[str, ...] = (),
     unread_count: int = 0,
     unread_seq: int = 0,
+    received_at: float | None = None,
 ) -> RuntimeInput:
     """把一个宿主事件映射成运行时输入；字段缺失时按保守默认值处理。"""
     text = _text(event)
+    scene = _scene(event)
     called = any(name and name in text for name in names)
     return RuntimeInput(
         session_id=str(session_id or getattr(event, "unified_msg_origin", "") or ""),
         text=text,
         event_time=_at(event),
-        received_at=_at(event),
-        speaker_id=str(
-            getattr(event, "sender_id", "")
-            or getattr(event, "get_sender_id", lambda: "")()
-            or ""
-        ),
-        private=_scene(event) == "private",
+        received_at=time.time() if received_at is None else received_at,
+        speaker_id=_identity(event, "sender_id", "get_sender_id"),
+        private=scene == "private",
         mentioned=_mentioned(event),
         question="?" in text or "？" in text,
-        unread_count=max(0, int(unread_count)),
-        unread_seq=max(0, int(unread_seq)),
-        scene=_scene(event),
-        conversation_id=str(getattr(event, "group_id", "") or ""),
+        unread_count=unread_count if type(unread_count) is int and unread_count >= 0 else 0,
+        unread_seq=unread_seq if type(unread_seq) is int and unread_seq >= 0 else 0,
+        scene=scene,
+        conversation_id=_identity(event, "group_id", "get_group_id"),
         thread_id=str(getattr(event, "thread_id", "") or ""),
-        self_id=str(getattr(event, "self_id", "") or ""),
+        self_id=_identity(event, "self_id", "get_self_id"),
         role=_role(event, owner_id),
         addressed=_mentioned(event) or called,
         reply_to_me=bool(getattr(event, "reply_to_self", False)),
-        event_id=str(getattr(event, "message_id", "") or ""),
+        event_id=event_id(event),
         kind="message",
     )

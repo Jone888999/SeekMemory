@@ -197,6 +197,111 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.context.registered_web_apis, [])
         self.assertIsNone(self.plugin.store)
 
+    async def test_concurrent_lifecycle_rebuilds_one_runtime_and_resets_closed_references(self) -> None:
+        runtime = self.plugin.services.runtime
+        worker = self.plugin.services.runtime_worker
+        await asyncio.gather(*(self.plugin.initialize() for _ in range(3)))
+        self.assertIs(self.plugin.services.runtime, runtime)
+        self.assertIs(self.plugin.services.runtime_worker, worker)
+        self.assertIs(worker.runtime, runtime)
+        self.assertIs(runtime.message_sender, self.plugin.actions)
+        tasks = list(self.plugin.services.background_service.tasks)
+        await asyncio.gather(self.plugin.terminate(), self.plugin.terminate())
+        self.assertTrue(all(task.done() for task in tasks))
+        for name in ("services", "store", "buffer", "cache", "jobs", "web", "actions", "run_tracer"):
+            self.assertIsNone(getattr(self.plugin, name), name)
+        self.assertFalse(self.plugin.ready)
+        await asyncio.gather(self.plugin.initialize(), self.plugin.initialize())
+        self.assertTrue(self.plugin.ready)
+        self.assertIsNot(self.plugin.services.runtime, runtime)
+        self.assertIsNot(self.plugin.services.runtime_worker, worker)
+        self.assertEqual(len(self.context.registered_web_apis), 1)
+
+    async def test_failed_host_registration_releases_partial_start_and_can_retry(self) -> None:
+        await self.plugin.terminate()
+        original = self.context.register_web_api
+
+        def broken_registration(*args):
+            original(*args)
+            raise RuntimeError("private host detail")
+
+        with patch.object(self.context, "register_web_api", side_effect=broken_registration):
+            with self.assertRaises(RuntimeError):
+                await self.plugin.initialize()
+        self.assertFalse(self.plugin.ready)
+        self.assertIsNone(self.plugin.services)
+        self.assertIsNone(self.plugin.store)
+        self.assertEqual(self.context.registered_web_apis, [])
+        await self.plugin.initialize()
+        self.assertTrue(self.plugin.ready)
+
+    async def test_engine_failure_after_open_does_not_leave_a_live_partial_engine(self) -> None:
+        await self.plugin.terminate()
+        module = f"{ROOT.name}.adapters.astrbot_plugin"
+        with patch(f"{module}.Cache.load", side_effect=RuntimeError("private storage detail")):
+            await self.plugin.initialize()
+        self.assertFalse(self.plugin.ready)
+        self.assertIsNone(self.plugin.store)
+        self.assertIsNone(self.plugin.cache)
+        self.assertIsNone(self.plugin.services)
+        await self.plugin.initialize()
+        self.assertTrue(self.plugin.ready)
+
+    async def test_cleanup_failure_still_releases_other_resources(self) -> None:
+        tasks = list(self.plugin.services.background_service.tasks)
+        with patch.object(self.plugin.buffer, "save", side_effect=RuntimeError("private buffer detail")):
+            await self.plugin.terminate()
+        self.assertTrue(all(task.done() for task in tasks))
+        self.assertIsNone(self.plugin.store)
+        self.assertEqual(self.context.registered_web_apis, [])
+        await self.plugin.initialize()
+        self.assertTrue(self.plugin.ready)
+
+    async def test_cancelled_stop_waits_for_cleanup_before_propagating(self) -> None:
+        background = self.plugin.services.background_service
+        original = background.stop
+        entered, release = asyncio.Event(), asyncio.Event()
+        tasks = list(background.tasks)
+
+        async def delayed_stop():
+            entered.set()
+            await release.wait()
+            await original()
+
+        with patch.object(background, "stop", side_effect=delayed_stop):
+            stopping = asyncio.create_task(self.plugin.terminate())
+            await entered.wait()
+            stopping.cancel()
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await stopping
+        self.assertTrue(all(task.done() for task in tasks))
+        self.assertIsNone(self.plugin.store)
+        self.assertIsNone(self.plugin.services)
+
+    async def test_late_host_callbacks_after_stop_are_ignored_without_stale_access(self) -> None:
+        event = PrivateEvent("remember this", "stopped-turn")
+        await self.restart_plugin(owner_umo=event.unified_msg_origin)
+        await self.plugin.buffer_message(event)
+        await self.plugin.terminate()
+        extras = dict(event.extras)
+        await self.plugin.observe_agent_begin(event, None)
+        await self.plugin.observe_agent_done(event, None, SimpleNamespace(role="err"))
+        await self.plugin.observe_tool(event, SimpleNamespace(name="memory_search"), {"query": "private"})
+        await self.plugin.observe_tool_result(event, SimpleNamespace(name="memory_search"), {}, "private result")
+        await self.plugin.buffer_message(event)
+        await self.plugin.capture_reply(event, SimpleNamespace(completion_text="late reply"))
+        await self.plugin.record_delivery(event)
+        await self.plugin.attention_gate(event)
+        request = SimpleNamespace(system_prompt="original")
+        await self.plugin.inject_scene_hints(event, request)
+        self.assertEqual(request.system_prompt, "original")
+        self.assertEqual(event.extras, extras)
+        self.assertIsNone(self.plugin.services)
+        await self.plugin.initialize()
+        rows = self.plugin.store.sources.recent_sources(since="", limit=10)
+        self.assertEqual([row.role for row in rows], ["user"])
+
     async def test_failed_extraction_preserves_buffer(self) -> None:
         class Provider:
             async def text_chat(self, **_kwargs):

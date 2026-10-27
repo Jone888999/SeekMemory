@@ -23,9 +23,10 @@
 | M3 适配器骨架 | ✅ 完成（mock 内核 + 真机加载） |
 | M4 注入打通 | ✅ 2026-10-27 在隔离实例（独立 `DSH_HOME` + headless/web）真机验证：加载、apply、3 个钩子、卸载回收全部走通 |
 | M5 抽取归宿主 | ✅ 已实现，**默认关闭**：`extractEnabled: false`，且必须显式配 `llmProvider` / `llmModel` 才会拉活 |
-| 契约文档 / conformance 层 | 在 issue #107 里，等维护者定范围 |
+| 契约文档 / conformance 层 | #107 已通过 #113 合入，见中英文模块文档及 `--layer conformance` |
+| 运行时协议桥 | 已实现客户端与模拟服务验证；真实 Python 服务和 #117 动作审计接线尚未提供 |
 
-说明：M4 的"真机"指真实 DSH 宿主进程；对端内核仍是 `mock/kernel.mjs`（契约的可执行样例），因为上游的 `serve.py` 尚未合入。真实内核联调属于 issue #107 的 P3。
+说明：M4 的"真机"指真实 DSH 宿主进程；对端内核仍是 `mock/kernel.mjs`（契约的可执行样例）。#107 已关闭，但主分支仍没有真实 Python 本机服务入口；运行时桥的模拟服务测试不能代替真实服务联调。
 
 ---
 
@@ -35,7 +36,8 @@
 src/index.js          入口：name / inject / apply（绝不抛）
 src/safe-mode.js      启动跳闸：boot.json（启动阶段）+ crash.json（运行期未捕获异常）
 src/host-dsh.js       唯一的 DSH 特定文件：4 个扩展点都在这里（G12）
-src/kernel-client.js  契约客户端：7 个端点，永不抛，降级原因是枚举（G14）
+src/kernel-client.js  记忆及运行时契约客户端，复用本机认证连接与固定降级原因
+src/runtime-bridge.js 运行时 JSON 映射、能力识别与卸载取消，不含策略或模型循环
 src/extract-bridge.js M5 拉取式抽取：/extract/plan → 宿主 LLM → /extract/commit
 src/config.js         默认值与归一化（刻意不依赖 schemastery）
 src/message.js        createUserMessage 动态导入 + 手工兜底

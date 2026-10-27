@@ -19,11 +19,12 @@
 
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync, renameSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 
 const VERSION = '0.0.1-mock';
 const HOST_CONTRACT = 1;
+const runtimeFixture = JSON.parse(readFileSync(new URL('../../../tests/fixtures/runtime_host.json', import.meta.url), 'utf8'));
 
 // ---------- 参数 ----------
 function parseArgs(argv) {
@@ -165,9 +166,25 @@ const server = createServer(async (req, res) => {
         ok: true,
         version: VERSION,
         host_contract: hc,
+        ...(process.env.MOCK_RUNTIME === '1' ? { runtime_contract: 1, runtime_gate_enabled: false } : {}),
         db: path.join(dataDir, 'mock.db'),
         uptime_s: Math.round(process.uptime()),
       });
+    }
+
+    // Fixed contract examples only: no runtime state machine or scheduler in this mock.
+    if (process.env.MOCK_RUNTIME === '1' && route === 'POST /runtime/events') {
+      const body = await readBody(req);
+      if (body.kind === 'accept_user') return json(res, 200, runtimeFixture.receipt);
+      if (body.kind === 'record_reply') return json(res, 200, runtimeFixture.reply);
+      if (['record_delivery', 'record_error', 'action_result'].includes(body.kind)) {
+        return json(res, 200, { accepted: true });
+      }
+      return json(res, 400, { error: 'unsupported_event' });
+    }
+    if (process.env.MOCK_RUNTIME === '1' && route === 'POST /runtime/context') {
+      await readBody(req);
+      return json(res, 200, runtimeFixture.context);
     }
 
     if (route === 'POST /capture') {
