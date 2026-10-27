@@ -64,6 +64,7 @@ from .attention import AttentionHooks
 from .hooks import AstrBotHooks
 from .runtime import AstrBotRuntimeAdapter
 from .time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
+from .topics import AstrBotTopicSource
 
 class AstrBotPlugin(star.Star):
     """Composition root and lifecycle owner for the AstrBot host.
@@ -277,6 +278,7 @@ class AstrBotPlugin(star.Star):
             proactive_policy=DefaultProactivePolicy(
                 enabled=bool(self._c("proactive_enabled", False))
             ),
+            topic_source=AstrBotTopicSource(self.buffer),
         )
         background = BackgroundService(
             jobs=self.jobs,

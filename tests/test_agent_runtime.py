@@ -20,6 +20,7 @@ from app.runtime import (  # noqa: E402
     MemoryContextRequest,
     ProactiveDecision,
     RunContext,
+    TopicCandidate,
     RuntimeInput,
     SessionState,
     WakeAction,
@@ -171,14 +172,14 @@ class DefaultAttentionPolicyTest(unittest.TestCase):
         self.assertEqual(len(stale), 1)
         self.assertNotIn("old", str(stale[0]))
 
-    def test_mark_delivered_records_cooldown_state(self) -> None:
+    def test_mark_delivered_records_last_spoke_and_policy_stays_observe(self) -> None:
         store = InMemoryStateStore()
         runtime = AgentRuntime(store, clock=lambda: 100)
         runtime.observe(
             RuntimeInput("s1", "hello", event_time=100, mentioned=True), now=100
         )
         runtime.mark_delivered("s1", now=100)
-        self.assertEqual(store.get("s1").cooldown_until, 130)
+        self.assertEqual(store.get("s1").last_spoke_at, 100)
         self.assertEqual(
             runtime.observe(
                 RuntimeInput("s1", "ambient", event_time=110), now=110
@@ -268,18 +269,14 @@ class DefaultAttentionPolicyTest(unittest.TestCase):
         state.last_event_at = 11.0
         state.proactive_due_at = 22.0
         state.proactive_attempts = 2
-        state.last_action_at = 33.0
-        state.last_action_kind = "host_action"
-        state.last_action_status = "succeeded"
+        state.followup_by_speaker = {"u1": 3}
         first.put(state)
 
         loaded = JsonStateStore(path).get("s1")
         self.assertEqual(loaded.last_event_at, 11.0)
         self.assertEqual(loaded.proactive_due_at, 22.0)
         self.assertEqual(loaded.proactive_attempts, 2)
-        self.assertEqual(loaded.last_action_at, 33.0)
-        self.assertEqual(loaded.last_action_kind, "host_action")
-        self.assertEqual(loaded.last_action_status, "succeeded")
+        self.assertEqual(loaded.followup_by_speaker, {"u1": 3})
 
     def test_runtime_surface_has_no_test_only_mutators(self) -> None:
         for name in ("quiet", "wait", "mark_read"):
@@ -312,10 +309,9 @@ class DefaultAttentionPolicyTest(unittest.TestCase):
         self.assertEqual(state.quiet_until, 123)
         self.assertEqual(state.wait_until, 0.0)
         self.assertEqual(state.next_retry_at, 0.0)
-        self.assertEqual(state.reply_cooldown_seconds, 30.0)
         self.assertEqual(state.proactive_due_at, 0.0)
         self.assertEqual(state.proactive_attempts, 0)
-        self.assertEqual(state.last_action_status, "")
+        self.assertEqual(state.followup_by_speaker, {})
         runtime = AgentRuntime(store, clock=lambda: 200)
         runtime.observe(RuntimeInput("s1", "ambient", event_time=200), now=200)
         runtime.mark_delivered("s1", now=200)
@@ -488,7 +484,11 @@ class DefaultAttentionPolicyTest(unittest.TestCase):
 
     def test_proactive_dispatch_generates_sends_and_advances_state(self) -> None:
         class Model:
+            def __init__(self):
+                self.prompts = []
+
             async def complete(self, session_id, prompt, system_prompt=None):
+                self.prompts.append(prompt)
                 return "proactive reply"
 
         class Sender:
@@ -511,10 +511,11 @@ class DefaultAttentionPolicyTest(unittest.TestCase):
         state.proactive_due_at = 100.0
         store.put(state)
         recorder = Recorder()
+        model = Model()
         runtime = AgentRuntime(
             store,
             clock=lambda: 100,
-            model_gateway=Model(),
+            model_gateway=model,
             message_sender=Sender(),
             recorder=recorder,
         )
@@ -522,11 +523,13 @@ class DefaultAttentionPolicyTest(unittest.TestCase):
             runtime.dispatch_proactive(
                 RunContext("s1", "memory prompt", event_time=90, received_at=100),
                 ProactiveDecision(True, "due"),
+                topic=TopicCandidate("昨天聊到一半的事", kind="unfinished_topic"),
                 now=100,
             )
         )
         self.assertTrue(result.delivered)
         self.assertEqual(recorder.reply["decision"], "proactive")
+        self.assertIn("主动由头", model.prompts[0])
         state = store.get("s1")
         self.assertEqual(state.proactive_attempts, 1)
         self.assertEqual(state.proactive_due_at, 0.0)

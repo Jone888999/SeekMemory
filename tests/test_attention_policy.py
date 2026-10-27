@@ -89,6 +89,17 @@ class FollowupStateTest(unittest.TestCase):
         runtime.observe(event(), now=101.0)
         self.assertEqual(store.get("session-1").followup_by_speaker["u1"], 2)
 
+    def test_agent_runtime_bounds_followup_speaker_map(self) -> None:
+        from app.runtime import AgentRuntime, InMemoryStateStore
+
+        store = InMemoryStateStore()
+        runtime = AgentRuntime(store, clock=lambda: 100.0)
+        for index in range(70):
+            runtime.observe(
+                event(speaker_id=f"u{index}", mentioned=True), now=100.0
+            )
+        self.assertLessEqual(len(store.get("session-1").followup_by_speaker), 64)
+
     def test_agent_runtime_clears_followup_at_zero(self) -> None:
         from app.runtime import AgentRuntime, InMemoryStateStore
 

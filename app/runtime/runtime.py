@@ -27,6 +27,9 @@ from .contracts import (
 )
 from .recorder import RecordedReply, RunRecorder
 from .attention import DefaultAttentionPolicy
+from .topics import TopicCandidate
+
+MAX_FOLLOWUP_SPEAKERS = 64
 
 
 class AgentRuntime:
@@ -113,6 +116,8 @@ class AgentRuntime:
             remaining = max(0, int(policy_decision.followup_remaining))
             if remaining:
                 state.followup_by_speaker[speaker_id] = remaining
+                while len(state.followup_by_speaker) > MAX_FOLLOWUP_SPEAKERS:
+                    state.followup_by_speaker.pop(next(iter(state.followup_by_speaker)))
             else:
                 state.followup_by_speaker.pop(speaker_id, None)
         decision = policy_decision.runtime_decision()
@@ -408,6 +413,7 @@ class AgentRuntime:
         context: RunContext,
         decision: ProactiveDecision,
         *,
+        topic: TopicCandidate | None = None,
         now: float | None = None,
     ) -> RunResult:
         """Generate, send and record one due proactive turn."""
@@ -422,16 +428,22 @@ class AgentRuntime:
             return RunResult(run_id, session_id, False, error="recorder_missing")
         if not run_id:
             run_id = self.recorder.new_run_id()
+        topic_text = str(topic.text if topic is not None else "").strip()
         runtime_input = RuntimeInput(
             session_id=session_id,
-            text=context.text,
+            text=topic_text or context.text,
             event_time=context.event_time,
             received_at=context.received_at,
         )
         try:
             memory = self.build_context(runtime_input, now=moment, reason="proactive")
+            prompt = (memory.text or "").strip()
+            if topic_text:
+                prompt = (
+                    f"{prompt}\n\n主动由头（来自记忆）：{topic_text}"
+                ).strip()
             reply = await self.model_gateway.complete(
-                session_id, memory.text or context.text, None
+                session_id, prompt or context.text, None
             )
             if not str(reply or "").strip():
                 raise RuntimeError("empty_response")
@@ -509,6 +521,13 @@ class AgentRuntime:
         state.proactive_due_at = moment + delay
         state.proactive_attempts = 0
         state.last_seen_at = moment
+        self._save(state)
+        return state
+
+    def clear_proactive(self, session_id: str) -> SessionState:
+        """Cancel a due proactive opportunity without touching user state."""
+        state = self.store.get(session_id)
+        state.proactive_due_at = 0.0
         self._save(state)
         return state
 
@@ -590,10 +609,6 @@ class AgentRuntime:
         moment = self.clock() if now is None else now
         state = self.store.get(session_id)
         state.last_spoke_at = max(state.last_spoke_at, moment)
-        state.cooldown_until = max(
-            state.cooldown_until,
-            state.last_spoke_at + max(0.0, state.reply_cooldown_seconds),
-        )
         if read_through_seq is not None:
             cursor = min(state.last_unread_seq, max(0, int(read_through_seq)))
             advanced = cursor > state.read_through_seq
