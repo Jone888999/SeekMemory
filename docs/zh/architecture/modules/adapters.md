@@ -36,10 +36,10 @@ AccessService 基于完整 session UMO、sender ID、owner/trusted 配置和 obs
 
 ## DSH 协议桥
 
-DSH 的 RuntimeBridge 复用 KernelClient 的本机认证连接。服务在 healthz 声明 runtime_contract: 1 后，桥接器通过 POST /runtime/events 传递输入、回复、交付、错误及动作执行结果，通过 POST /runtime/context 获取 MemoryContext。公共字段以 app/runtime/contracts.py 为准，共享非空样例同时由 Python 和 Node 测试校验。消息时间按已知毫秒或带时区字符串转为 epoch 秒；未知时间为 0，不猜历史时区。
+DSH 的 RuntimeBridge 复用 KernelClient 的本机认证连接。服务在 healthz 声明 runtime_contract: 1 后，桥接器通过 POST /runtime/events 传递输入、回复、交付、错误及动作执行结果，通过 POST /runtime/context 获取 MemoryContext。公共字段以 app/runtime/contracts/ 为准，共享非空样例同时由 Python 和 Node 测试校验。消息时间按已知毫秒或带时区字符串转为 epoch 秒；未知时间为 0，不猜历史时区。
 
 subject_key 表示稳定记忆归属，session_id 表示本轮运行会话，二者不混用。pre-step 只在消息 ID 匹配时使用对应的 Source 回执与事件时间；服务的 runtime_gate_enabled 明确开启后，才把其 RunDecision 映射为宿主放行或拒绝，不实现第二套注意力策略。
 
-旧服务或不支持此运行时协议的服务沿用 capture/recall。运行时写请求一旦发出，即使失败或超时，也不再补发 legacy capture，避免重复保存。普通 assistant/message 只映射为 record_reply，没有发送完成证明时不调用 record_delivery。桥接器不新增模型循环、调度器、主动发送或工具执行能力；动作审计写入口仍等待 #117 的实现。
+旧服务或不支持此运行时协议的服务沿用 capture/recall。运行时写请求一旦发出，即使失败或超时，也不再补发 legacy capture，避免重复保存。普通 assistant/message 只映射为 record_reply，没有发送完成证明时不调用 record_delivery。桥接器不新增模型循环、调度器、主动发送或工具执行能力；`scripts/runtime_http.py` 是只做组合的真实 Python loopback 服务，`runtime-python-smoke.mjs` 启动它并让 DSH RuntimeBridge 驱动真实 AgentRuntime。
 
-DSH 每个宿主上下文只注册一次；卸载会撤销钩子、取消桥接请求并清空上下文缓存，迟到的响应不再注入。当前仅提供客户端和模拟服务协议验证，仓库尚无真实 Python 本机服务入口，不能视为已完成真实服务联调。
+DSH 每个宿主上下文只注册一次；卸载会撤销钩子、取消桥接请求并清空上下文缓存，迟到的响应不再注入。仓库现在还提供 `scripts/runtime_http.py` 真实 Python 本机服务入口，以及让 DSH RuntimeBridge 驱动它的 Node 集成测试。
