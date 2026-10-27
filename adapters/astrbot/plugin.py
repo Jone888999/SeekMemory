@@ -363,7 +363,9 @@ class AstrBotPlugin(star.Star):
             self.graph = Graph(self.store.artifacts)
             self.hybrid_retriever = HybridRetriever(self.graph, self.cache)
             self.buffer = AstrBotBuffer(
-                str(self.data_path.parent / "pending.json"), extraction=self.store.extraction
+                str(self.data_path.parent / "pending.json"),
+                extraction=self.store.extraction,
+                clock=self.clock,
             )
             migrated = self.buffer.migrate_legacy()
             if self.buffer.load_error:

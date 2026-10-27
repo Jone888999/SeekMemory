@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import datetime
-import time
 from dataclasses import replace
-from typing import Any
+from typing import Any, Callable
 
 try:
     from ...app.contracts import DialogueTurn
@@ -102,8 +101,11 @@ class AstrBotRunRecorder(RunRecorder):
 class AstrBotBuffer(Buffer):
     """Use UTC+8 views and age signals without changing the kernel Buffer."""
 
-    def __init__(self, path: str = "", extraction=None) -> None:
+    def __init__(
+        self, path: str = "", extraction=None, clock: Callable[[], float] | None = None
+    ) -> None:
         self._source_times: dict[str, float] = {}
+        self.clock = clock or (lambda: 0.0)
         super().__init__(path, extraction=extraction)
 
     @staticmethod
@@ -156,4 +158,4 @@ class AstrBotBuffer(Buffer):
 
     def oldest_topic_age(self) -> float:
         stamps = self._timestamps()
-        return max(0.0, time.time() - min(stamps)) if stamps else 0.0
+        return max(0.0, self.clock() - min(stamps)) if stamps else 0.0

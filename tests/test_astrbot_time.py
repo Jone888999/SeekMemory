@@ -46,7 +46,7 @@ class AstrBotTimeTest(unittest.TestCase):
             db = open_store(str(Path(directory) / "memory.db"))
             try:
                 episodes = []
-                buffer = AstrBotBuffer(extraction=db.extraction)
+                buffer = AstrBotBuffer(extraction=db.extraction, clock=time.time)
                 recorder = AstrBotRunRecorder(
                     sources=db.sources, buffer=buffer, checkpoint=None,
                     episodes=SimpleNamespace(record=episodes.append),
@@ -105,7 +105,7 @@ class AstrBotTimeTest(unittest.TestCase):
                 raw = old.isoformat(timespec="seconds")
                 source = Source("u1", "t1", "s1", "u", "user", "same topic", raw)
                 db.extraction.enqueue_extraction(source, "topic", raw)
-                buffer = AstrBotBuffer(extraction=db.extraction)
+                buffer = AstrBotBuffer(extraction=db.extraction, clock=time.time)
                 self.assertEqual(buffer.items[0].at, utc8_time_hook(raw, projection=True))
                 self.assertAlmostEqual(buffer.last_ts, time.time() - 3600, delta=10)
                 self.assertAlmostEqual(buffer.oldest_topic_age(), 3600, delta=10)
@@ -122,7 +122,7 @@ class AstrBotTimeTest(unittest.TestCase):
                 raw = "2026-10-27T10:00:00"
                 source = Source("u1", "t1", "s1", "u", "user", "legacy", raw)
                 db.extraction.enqueue_extraction(source, "topic", raw)
-                buffer = AstrBotBuffer(extraction=db.extraction)
+                buffer = AstrBotBuffer(extraction=db.extraction, clock=time.time)
                 self.assertEqual(buffer.items[0].at, raw)
                 self.assertEqual(buffer.last_ts, 0)
                 self.assertEqual(buffer.oldest_topic_age(), 0)
