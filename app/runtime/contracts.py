@@ -41,6 +41,23 @@ class ActionStatus(str, Enum):
 
 
 @dataclass(frozen=True)
+class ActionRequest:
+    """Transient host execution input; its text must never enter action audit."""
+
+    session_id: str
+    kind: ActionKind = ActionKind.SEND_TEXT
+    text: str = ""
+
+
+@dataclass(frozen=True)
+class ActionResult:
+    """Observed host execution result, without audit transition policy."""
+
+    ok: bool
+    reason: str = ""
+
+
+@dataclass(frozen=True)
 class RuntimeInput:
     """One inbound event reduced to host-neutral fields.
 
@@ -229,6 +246,10 @@ class ModelGateway(Protocol):
 
 class MessageSender(Protocol):
     async def send(self, session_id: str, text: str) -> bool: ...
+
+
+class ActionPort(Protocol):
+    async def execute(self, request: ActionRequest) -> ActionResult: ...
 
 
 class ActionSink(Protocol):

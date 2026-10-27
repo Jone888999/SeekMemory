@@ -1,5 +1,15 @@
 # 变更记录
 
+## Unreleased
+
+### 中文
+
+- 补齐宿主动作执行接口，AstrBot 发送复用同一入口；不支持的动作和宿主失败返回固定原因码，取消继续交给运行时恢复。动作正文不进入审计，不修改数据库、公开配置或运行时策略。
+
+### English
+
+- Add the host action execution port and route AstrBot sends through it. Unsupported actions and host failures return fixed reason codes; cancellation propagates to runtime recovery. Action text stays out of audit, with no database, public configuration, or runtime policy change.
+
 ## 0.4.3 — 2026-10-27
 
 ### 中文
