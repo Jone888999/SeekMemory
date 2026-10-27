@@ -8,7 +8,7 @@ app/runtime 定义不依赖 AstrBot 的会话状态、注意力决策和运行�
 
 - RuntimeInput 是从宿主事件裁剪出的输入；RunContext 是一项待执行任务的上下文。
 - SessionState 保存 wait、retry、quiet、cooldown、unread/read-through、dispatch 尝试等会话运行状态。它不是 Source 或 Artifact。
-- WakePolicy 对输入给出 ignore、observe、wait、reply 之一。私聊和 @/直接提及是强注意力；明确问题可直接回复；quiet/cooldown 影响 ambient 流量。
+- `DefaultAttentionPolicy` 只给出“是否回复”：主人、私聊和直接提及回复；非主人被直接提及后，为该说话人保留 3 轮后续回复窗口；其余消息观察。它不包含群聊、关系、热度或额度算法。
 - TimingPolicy 是纯 wait/retry 截止时间策略。Scheduler 只读持久化状态并返回 due runs；RuntimeWorker 轮询、去重并分发，不拥有记忆规则。
 - MemoryContextPort 将运行时输入交给既有 RecallService；Runtime 本身不实现第二套记忆检索。
 - ActionPort 接收临时 ActionRequest（session_id、kind、text），返回 ActionResult（ok、reason）。MessageSender 的布尔发送接口保持兼容；ActionRecord 仍只保存无正文审计信息，执行结果不负责决定审计终态。
@@ -19,7 +19,7 @@ app/runtime 定义不依赖 AstrBot 的会话状态、注意力决策和运行�
 
 `ActionLedger` 记录动作尝试及至多一个终态（`succeeded`、`failed` 或 `cancelled`）。幂等键由会话、run、动作类型和宿主 callback key 稳定生成；callback key 本身不会落盘。`RepoActionSink` 通过 `RuntimeEpisodeRepository` 写入元数据。审计仅保留标识符、时间戳、受限原因码、尝试序号和状态，不保存消息正文、prompt、工具参数或结果。
 
-`SessionState` 将注意力额度和重置时间与未读数分开。旧数据迁移 helper 只在调用方确认这是旧 `session#speaker` 额度记录时，才会把 `unread_count` 移入额度字段。旧额度没有实际生效的 TTL，因此迁移时保留额度且不设重置期限。
+`SessionState` 保存会话级调度状态和按说话人分开的 `followup_by_speaker` 后续回复计数。它不是记忆主体；说话人身份仍由 `speaker_id` 表达。
 
 ## 两条运行路径
 

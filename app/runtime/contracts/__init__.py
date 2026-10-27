@@ -10,6 +10,7 @@ from .actions import (
     ActionStatus,
 )
 from .events import (
+    AttentionDecision,
     AttentionLevel,
     RunContext,
     RunDecision,
@@ -38,6 +39,7 @@ __all__ = [
     "ActionResult",
     "ActionSink",
     "ActionStatus",
+    "AttentionDecision",
     "AttentionLevel",
     "Clock",
     "MemoryContext",

@@ -98,3 +98,23 @@ class RunDecision:
     attention: AttentionLevel = AttentionLevel.AMBIENT
     must_reply: bool = False
 
+
+@dataclass(frozen=True)
+class AttentionDecision:
+    """Policy result plus the generic follow-up state patch."""
+
+    action: WakeAction
+    reason: str
+    attention: AttentionLevel = AttentionLevel.AMBIENT
+    must_reply: bool = False
+    followup_speaker_id: str = ""
+    followup_remaining: int | None = None
+
+    def runtime_decision(self) -> RunDecision:
+        return RunDecision(
+            action=self.action,
+            reason=self.reason,
+            attention=self.attention,
+            must_reply=self.must_reply,
+        )
+

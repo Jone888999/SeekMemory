@@ -8,7 +8,7 @@ app/runtime defines host-agnostic session state, attention decisions, and runtim
 
 - RuntimeInput is a reduced host event; RunContext is one pending action context.
 - SessionState stores runtime scheduling state such as wait, retry, quiet, cooldown, unread/read-through, and dispatch attempts. It is not a Source or Artifact.
-- WakePolicy returns ignore, observe, wait, or reply. Private messages and direct mentions have high attention; explicit questions may reply directly; quiet/cooldown affects ambient traffic.
+- `DefaultAttentionPolicy` only decides whether to reply: the owner, private messages, and direct attention reply; after a non-owner direct interaction, a three-round per-speaker follow-up window is retained; other messages are observed. It contains no group, relationship, heat, or quota policy.
 - TimingPolicy is a pure wait/retry deadline policy. Scheduler reads persisted state and returns due runs; RuntimeWorker polls, deduplicates in-flight work, and dispatches without owning memory rules.
 - MemoryContextPort delegates to the existing RecallService through an adapter; Runtime does not implement a second memory retrieval path.
 - ActionPort accepts transient ActionRequest (session_id, kind, text) and returns ActionResult (ok, reason). MessageSender retains its boolean send interface; ActionRecord remains content-free audit metadata, and execution results do not decide audit terminal states.
@@ -19,7 +19,7 @@ app/runtime defines host-agnostic session state, attention decisions, and runtim
 
 `ActionLedger` records an attempted action followed by at most one terminal outcome (`succeeded`, `failed`, or `cancelled`). Its stable idempotency key is derived from session, run, action kind, and the host callback key; the callback key itself is not stored. `RepoActionSink` writes metadata through `RuntimeEpisodeRepository`. The audit stores only identifiers, timestamps, bounded reason codes, attempt numbers, and status; it excludes message text, prompts, tool arguments, and results.
 
-`SessionState` keeps attention quota and reset time separate from unread counts. The legacy migration helper only moves `unread_count` when the caller identifies an old `session#speaker` quota record. Legacy quota values had no enforced TTL, so migration preserves them with no reset deadline.
+`SessionState` stores session scheduling state and a per-speaker `followup_by_speaker` counter. It is not a memory subject; speaker identity remains in `speaker_id`.
 
 ## Two runtime paths
 

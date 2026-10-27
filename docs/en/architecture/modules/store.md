@@ -26,7 +26,7 @@ SqliteDatabase owns schema creation and migrations; repositories share its conne
 - Extraction admission writes the Source blob/row and queue state in the same transaction. Queue text is reconstructed by joining Sources; success and failure change queue state but never delete the original message.
 - Source IDs use idempotent inserts, so retries do not create a second original-message row.
 - Runtime action rows extend `runtime_episodes` with nullable action identity and status metadata. Existing episode rows keep their values; migration adds defaults and preserves the one-normal-episode-per-run index while allowing action rows to share a run ID. A partial unique index permits at most one terminal outcome per action, and a trigger ignores attempts arriving after that terminal. Action rows use the existing episode pruning limits.
-- `runtime_state` continues storing `SessionState` as a JSON payload. Attention quota and reset time are additive fields; legacy speaker quota migration is performed only for records identified by the host caller, preserving prior quota values.
+- `runtime_state` continues storing `SessionState` as a JSON payload; the follow-up window is stored per speaker in `followup_by_speaker`, and legacy quota fields are no longer interpreted as runtime state.
 
 ## Cache
 

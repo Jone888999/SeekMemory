@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 @dataclass
 class SessionState:
@@ -32,8 +32,7 @@ class SessionState:
     last_action_at: float = 0.0
     last_action_kind: str = ""
     last_action_status: str = ""
-    attention_quota: int = 0
-    attention_quota_reset_at: float = 0.0
+    followup_by_speaker: dict[str, int] = field(default_factory=dict)
 
 
 class SessionStateStore(Protocol):

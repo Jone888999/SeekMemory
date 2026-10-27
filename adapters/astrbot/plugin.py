@@ -24,6 +24,7 @@ from ...app.runtime import (
     MemoryContext,
     MemoryContextRequest,
     ActionLedger,
+    DefaultAttentionPolicy,
     DefaultProactivePolicy,
     RepoActionSink,
     RunContext,
@@ -59,13 +60,7 @@ from ...webui.jobs import Jobs
 from ...webui.journal import Journal
 from ...webui.routes import WebRoutes
 from ...webui.trace import Trace
-from .attention import (
-    AttentionHooks,
-    AttentionPolicy,
-    AttentionRuntimePolicy,
-    thresholds_from_config,
-)
-from .signals import AstrBotSignals
+from .attention import AttentionHooks
 from .hooks import AstrBotHooks
 from .runtime import AstrBotRuntimeAdapter
 from .time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
@@ -196,17 +191,9 @@ class AstrBotPlugin(star.Star):
             episodes=self.episode_recorder,
             cache=self.cache,
         )
-        attention_policy = (
-            AttentionRuntimePolicy(
-                AttentionPolicy(thresholds_from_config(self._c)),
-                AstrBotSignals(self.cache, self.buffer),
-            )
-            if bool(self._c("attention_policy_enabled", False))
-            else None
-        )
         runtime = AgentRuntime(
             state_store,
-            policy=attention_policy,
+            policy=DefaultAttentionPolicy(),
             trace=self.trace,
             clock=time.time,
             memory_context=SeekMemoryContextAdapter(self._runtime_memory_context),

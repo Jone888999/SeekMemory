@@ -19,7 +19,6 @@ class Main(AstrBotPlugin):
     observe_tool_result = _HOOKS["observe_tool_result"]
     start_jobs = _HOOKS["start_jobs"]
     attention_gate = _HOOKS["attention_gate"]
-    inject_scene_hints = _HOOKS["inject_scene_hints"]
 
     def __init__(self, context, config: dict | None = None) -> None:
         super().__init__(context, config)

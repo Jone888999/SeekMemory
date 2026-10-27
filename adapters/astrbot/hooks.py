@@ -460,8 +460,4 @@ def build_astrbot_hooks(main_module: str) -> dict:
             filter.event_message_type(filter.EventMessageType.ALL, priority=9999),
             component="attention",
         ),
-        "inject_scene_hints": _register(
-            main_module, "inject_scene_hints", filter.on_llm_request(),
-            component="attention",
-        ),
     }
