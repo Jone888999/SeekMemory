@@ -13,7 +13,7 @@ store is the only SQL boundary. [store/__init__.py](../../../../store/__init__.p
 | ExtractionRepository | extraction_state projection, retries/backoff, deferred/extracted/dead transitions |
 | LedgerRepository | append-only hash-chain entries and verification |
 | RuntimeStateRepository | mutable per-session runtime state |
-| RuntimeEpisodeRepository | append-only runtime outcome metadata and retention cleanup |
+| RuntimeEpisodeRepository | append-only runtime outcome and content-free action metadata, with shared retention cleanup |
 | DreamRepository | daily Dream status and summary |
 | StoreMetricsRepository | read-only capacity counters |
 | TraceStore | separate bounded JSONL Agent Run Trace, outside the Artifact version chain |
@@ -25,6 +25,8 @@ SqliteDatabase owns schema creation and migrations; repositories share its conne
 - Artifact commit checks expected_revision and the next revision, then writes the blob, node head, version snapshot, revision-scoped evidence, state events, and ledger entry in one transaction. commit_many wraps a group of writes in one transaction; any failed write rolls back the group.
 - Extraction admission writes the Source blob/row and queue state in the same transaction. Queue text is reconstructed by joining Sources; success and failure change queue state but never delete the original message.
 - Source IDs use idempotent inserts, so retries do not create a second original-message row.
+- Runtime action rows extend `runtime_episodes` with nullable action identity and status metadata. Existing episode rows keep their values; migration adds defaults and preserves the one-normal-episode-per-run index while allowing action rows to share a run ID. A partial unique index permits at most one terminal outcome per action, and a trigger ignores attempts arriving after that terminal. Action rows use the existing episode pruning limits.
+- `runtime_state` continues storing `SessionState` as a JSON payload; the follow-up window is stored per speaker in `followup_by_speaker`, and legacy quota fields are no longer interpreted as runtime state.
 
 ## Cache
 

@@ -1,0 +1,5 @@
+{
+  "session": {"id":"bilibili:video:BV1:comment:root1","meta":{"scene":"comment","private":false,"conversation_id":"BV1","thread_id":"root1","self_id":"bot","role":"member","subject_key":"user:bob"}},
+  "event": {"type":"user/message","time":2000,"data":{"id":"comment-1","content":[{"type":"text","text":"这个视频不错"}],"speakerId":"20001","mentioned":true,"addressed":true,"reply_to_me":true}},
+  "received_at": 2001
+}

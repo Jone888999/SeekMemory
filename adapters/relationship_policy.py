@@ -88,8 +88,8 @@ class RelationshipInteractionPolicy:
             return InteractionGate(reason="relationship_off")
         snapshot = self.reader.get(event.speaker_id)
         must_reply = decision.must_reply
-        if event.private:
-            must_reply = bool(event.question or event.mentioned)
+        if event.question or event.addressed or event.reply_to_me:
+            must_reply = True
         return decide_interaction(
             snapshot,
             InteractionContext(

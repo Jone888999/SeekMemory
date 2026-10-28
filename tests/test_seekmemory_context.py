@@ -10,18 +10,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from adapters.seekmemory_context import SeekMemoryContextAdapter  # noqa: E402
+from adapters.astrbot.context import SeekMemoryContextAdapter  # noqa: E402
 from app.runtime import (  # noqa: E402
     AgentRuntime,
     InMemoryStateStore,
     MemoryContext,
+    MemoryContextRequest,
     RuntimeInput,
 )
 
 
 class SeekMemoryContextAdapterTest(unittest.TestCase):
     def test_delegates_event_and_preserves_context_and_final_ids(self) -> None:
-        event = RuntimeInput("s1", "hello", speaker_id="u1", private=True)
+        event = MemoryContextRequest(
+            session_id="s1", query="hello", speaker_id="u1", private=True
+        )
         expected = MemoryContext(
             text="recall block",
             info={
@@ -33,8 +36,8 @@ class SeekMemoryContextAdapterTest(unittest.TestCase):
         )
         seen = []
 
-        def build(runtime_input):
-            seen.append(runtime_input)
+        def build(request):
+            seen.append(request)
             return expected
 
         adapter = SeekMemoryContextAdapter(build)
@@ -46,8 +49,8 @@ class SeekMemoryContextAdapterTest(unittest.TestCase):
     def test_adapter_composes_with_agent_runtime(self) -> None:
         calls = []
 
-        def build(runtime_input):
-            calls.append((runtime_input.text, runtime_input.session_id))
+        def build(request):
+            calls.append((request.query, request.session_id))
             return MemoryContext(text="block", info={"final_ids": ("a1",)})
 
         runtime = AgentRuntime(
@@ -61,17 +64,18 @@ class SeekMemoryContextAdapterTest(unittest.TestCase):
 
     def test_adapter_imports_from_plugin_package_and_top_level(self) -> None:
         top_level = (
-            "from adapters.seekmemory_context import SeekMemoryContextAdapter; "
+            "from adapters.astrbot.context import SeekMemoryContextAdapter; "
             "from app.runtime import MemoryContext; "
-            "assert SeekMemoryContextAdapter(lambda event: MemoryContext("
+            "assert SeekMemoryContextAdapter(lambda request: MemoryContext("
             "text='x', info={'final_ids': ('1',)})).build_context(None).info"
             "['final_ids'] == ('1',)"
         )
         package = (
-            f"from {ROOT.name}.adapters.seekmemory_context import "
-            "SeekMemoryContextAdapter; "
-            f"from {ROOT.name}.app.runtime import MemoryContext; "
-            "assert SeekMemoryContextAdapter(lambda event: MemoryContext("
+            "from importlib import import_module; "
+            "SeekMemoryContextAdapter = "
+            f"import_module({ROOT.name!r} + '.adapters.astrbot.context').SeekMemoryContextAdapter; "
+            f"MemoryContext = import_module({ROOT.name!r} + '.app.runtime').MemoryContext; "
+            "assert SeekMemoryContextAdapter(lambda request: MemoryContext("
             "text='x', info={'final_ids': ('1',)})).build_context(None).info"
             "['final_ids'] == ('1',)"
         )
@@ -152,8 +156,10 @@ runtime_module = importlib.import_module(f"{root.name}.app.runtime")
 tracing_module = importlib.import_module(f"{root.name}.app.runtime.tracing")
 trace_store_module = importlib.import_module(f"{root.name}.store.run_trace")
 adapter_module = importlib.import_module(
-    f"{root.name}.adapters.seekmemory_context"
+    f"{root.name}.adapters.astrbot.context"
 )
+hooks_module = importlib.import_module(f"{root.name}.adapters.astrbot.hooks")
+attention_module = importlib.import_module(f"{root.name}.adapters.astrbot.attention")
 journal_module = importlib.import_module(f"{root.name}.webui.journal")
 
 
@@ -188,6 +194,8 @@ class FakeCapacity:
 class FakeMain(main_module.Main):
     def __init__(self, data_dir):
         self.ready = True
+        self.hooks = hooks_module.AstrBotHooks(self)
+        self.attention = attention_module.AttentionHooks(self)
         self.capacity_service = FakeCapacity()
         self.cache = object()
         self.data_path = Path(data_dir) / "memory.db"
@@ -206,6 +214,10 @@ class FakeMain(main_module.Main):
         self.services = SimpleNamespace(
             runtime=self.runtime,
             capacity_service=self.capacity_service,
+            access_service=SimpleNamespace(
+                may_recall=lambda session, sender: True,
+                may_observe=lambda session, sender: True,
+            ),
         )
 
     def _may_recall(self, event):

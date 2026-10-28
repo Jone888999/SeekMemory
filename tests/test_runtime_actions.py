@@ -11,8 +11,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.astrbot_actions import AstrBotActionPort  # noqa: E402
-from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
+from adapters.astrbot.actions import AstrBotActionPort  # noqa: E402
+from adapters.astrbot.runtime import AstrBotRuntimeAdapter  # noqa: E402
 from app.runtime import (  # noqa: E402
     AgentRuntime,
     RepoEpisodeStore,
@@ -137,7 +137,18 @@ class ActionTest(unittest.TestCase):
         state = state_store.get("s1")
         state.quiet_until = 321
         state_store.put(state)
-        self.assertEqual(RepoStateStore(db.runtime_state).get("s1").quiet_until, 321)
+        loaded = RepoStateStore(db.runtime_state).get("s1")
+        self.assertEqual(loaded.quiet_until, 321)
+        state.last_event_at = 11.0
+        state.proactive_due_at = 22.0
+        state.proactive_attempts = 2
+        state.followup_by_speaker = {"u1": 3}
+        state_store.put(state)
+        loaded = RepoStateStore(db.runtime_state).get("s1")
+        self.assertEqual(loaded.last_event_at, 11.0)
+        self.assertEqual(loaded.proactive_due_at, 22.0)
+        self.assertEqual(loaded.proactive_attempts, 2)
+        self.assertEqual(loaded.followup_by_speaker, {"u1": 3})
         self.assertEqual(db.runtime_state.sessions(), ["s1"])
 
         recorder = EpisodeRecorder(RepoEpisodeStore(db.runtime_episodes))

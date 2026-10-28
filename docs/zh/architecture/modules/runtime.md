@@ -7,16 +7,31 @@ app/runtime 定义不依赖 AstrBot 的会话状态、注意力决策和运行�
 ## 对象与策略
 
 - RuntimeInput 是从宿主事件裁剪出的输入；RunContext 是一项待执行任务的上下文。
-- SessionState 保存 wait、retry、quiet、cooldown、unread/read-through、dispatch 尝试等会话运行状态。它不是 Source 或 Artifact。
-- WakePolicy 对输入给出 ignore、observe、wait、reply 之一。私聊和 @/直接提及是强注意力；明确问题可直接回复；quiet/cooldown 影响 ambient 流量。
+- SessionState 保存 wait、retry、quiet、proactive、unread/read-through、dispatch 尝试等会话运行状态。它不是 Source 或 Artifact。
+- `DefaultAttentionPolicy` 只给出“是否回复”：主人、私聊和直接提及回复；非主人被直接提及后，为该说话人保留 3 轮后续回复窗口；其余消息观察。它不包含群聊、关系、热度或额度算法。
 - TimingPolicy 是纯 wait/retry 截止时间策略。Scheduler 只读持久化状态并返回 due runs；RuntimeWorker 轮询、去重并分发，不拥有记忆规则。
 - MemoryContextPort 将运行时输入交给既有 RecallService；Runtime 本身不实现第二套记忆检索。
+- ActionPort 接收临时 ActionRequest（session_id、kind、text），返回 ActionResult（ok、reason）。MessageSender 的布尔发送接口保持兼容；ActionRecord 仍只保存无正文审计信息，执行结果不负责决定审计终态。
+
+## 主动策略与动作审计
+
+`DefaultProactivePolicy` 是确定性的纯状态策略。它要求显式传入 `now`，返回下一次可执行时间，并检查到期时间、安静截止时间、冷却、重试、忽略连击退避和尝试次数上限。它不做 I/O、不调用模型、不修改状态；默认关闭，只有 runtime composition 明确启用后才会生效。`plan_proactive_dispatch` 按到期时间排序可执行会话，应用每轮派发上限，并将超出部分作为仍然到期的任务留待后续轮次。宿主通过 `AgentRuntime.schedule_proactive()` 持久化显式到期时间；AstrBot 在启用 proactive 后由消息入口按 `proactive_idle_seconds` 排期。`TopicSource` 从 Source-backed 缓冲投影中提供记忆由头；没有候选时 worker 清除该次主动机会，不发送空主动。
+
+`ActionExecutor` 是 Runtime 发起 action 的唯一执行/审计协调者：先写 attempt，再调用 `ActionPort`，最后写 terminal；`ActionMessageSender` 只是 `SEND_TEXT` 的兼容适配器。`ActionLedger` 记录动作尝试及至多一个终态（`succeeded`、`failed` 或 `cancelled`）。幂等键由会话、run、动作类型和宿主 callback key 稳定生成；callback key 本身不会落盘。`RepoActionSink` 通过 `RuntimeEpisodeRepository` 写入元数据。审计仅保留标识符、时间戳、受限原因码、尝试序号和状态，不保存消息正文、prompt、工具参数或结果。
+
+`SessionState` 保存会话级调度状态和按说话人分开的 `followup_by_speaker` 后续回复计数。它不是记忆主体；说话人身份仍由 `speaker_id` 表达。
 
 ## 两条运行路径
 
 **普通 AstrBot 回复**：hook 将用户消息交给 AgentRuntime.accept_user；RunRecorder 写用户 Source/队列；请求 hook 由 runtime.build_context 取得记忆；模型与宿主发送完成后，capture/delivery hooks 经 AgentRuntime/RunRecorder 记录助手 Source、召回强化和 EpisodeRecord。
 
+accept_user 返回的 UserRunReceipt 包含本轮接收时的消息确认序号 read_through_seq。宿主只在事件上携带该序号，并在发送完成时传回 record_delivery；运行时只确认该序号及以前的消息，保留此后到达的未读消息和等待任务。重复或乱序确认不能使已读位置或最近发言时间倒退。缺少序号的旧调用、过期事件只更新交付时间，不清空未读。待抽取队列不是未读计数；宿主不从队列长度推算会话未读数。
+
 **延迟 ambient 回复**：开启 runtime_gate_enabled 后，worker 根据已到期 wait/retry 选择会话；Runtime 领取 dispatch、构建记忆上下文、调用 ModelGateway、通过 MessageSender 发送，再记录助手 Source 与 EpisodeRecord。失败会按每会话上限和指数退避重试。该路径直接调用 provider，不运行完整 AstrBot agent/tool 循环。
+
+等待和重试期限在模型与发送执行期间保留，尝试次数在调用前持久化。取消会安排有限重试并继续抛出取消信号；进程中断后，原有 Scheduler 可从同一状态恢复。重试次数跨重启保留，新 Source 使用自己的次数预算。只有成功确认对应消息或旧任务耗尽时才清理相应任务，不能覆盖期间新消息安排的期限。运行时保存领取时的状态快照以区分旧标记与新任务，不增加数据库字段、表或第二套调度循环。
+
+成功发送后重新读取注入时钟，作为交付审计和最近发言时间的起点；失败或取消后也重新读时钟，从失败时刻开始退避。显式传入的 now 是该次运行的时间下界。RuntimeWorker.dispatch 统一管理并发名额与会话去重；轮询、直接调用共用此入口。排队也占用会话去重标记，取得名额后复查开关、时钟和到期状态，取消会释放名额与标记。这只保证单个 worker 进程中的协调，不保证跨进程严格单次发送。
 
 runtime_gate_enabled 默认 false。关闭时，等待和后台 deferred dispatch 不活跃；普通事件捕获、记忆注入和审计仍由插件 hook 承担。
 

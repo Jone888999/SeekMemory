@@ -1,8 +1,160 @@
 # 变更记录
 
+## 0.5.1 — 2026-10-28
+
+### 中文
+
+- 修复开口策略在 `wake_prefix` 为空时把每条群消息误判为「被 @」：映射层改为只认消息组件里指向 `self_id` 的 At，不再使用 `is_at_or_wake_command`。此前陌生人闲聊都会触发回复。
+- 策略参数化：新增 `attention_policy_enabled`（总开关）、`attention_followup_rounds`（点名后陪聊轮数，默认 3）、`attention_owner_always_reply`（主人是否每条都回，默认开）；组合层从配置读取并传给 `DefaultAttentionPolicy`。
+- 回归测试覆盖：At 组件识别、wake-all 不再算点名、主人开关、陪聊轮数。
+
+### English
+
+- Fix the attention policy treating every group message as an @-mention when `wake_prefix` is empty: the host mapping now only accepts a real `At` component targeting `self_id` instead of `is_at_or_wake_command`. Previously ambient stranger chatter triggered replies.
+- Make the policy configurable: `attention_policy_enabled` (master switch), `attention_followup_rounds` (follow-up rounds after being called, default 3) and `attention_owner_always_reply` (reply to every owner message, default on); composition reads them into `DefaultAttentionPolicy`.
+- Regression tests: real At detection, wake-all is not a mention, owner switch, follow-up rounds.
+
+## 0.5.2 — 2026-10-28
+
+### 中文
+
+- 修复宿主钩子被同名闭包互相覆盖的问题：`_register` 生成的包装函数原来全部叫 `handler`，而 AstrBot 用 `module + __name__` 生成 handler 唯一名，导致只有第一个 hook（`inject_memory`）注册成功，`attention_gate` 等全部丢失——开口策略因此从未真正执行。现在每个 hook 显式设置 `__name__`，并加源码级回归断言。
+- 现象对照：升级到 0.5.x 后线上 30 分钟 172 条入站 / 94 条回复 / 0 条策略决策；修复后 `attention_gate` 正常拦截陌生人闲聊。
+
+### English
+
+- Fix host hooks overwriting each other because every wrapper closure was named `handler`: AstrBot derives the unique handler name from `module + __name__`, so only the first hook (`inject_memory`) registered and `attention_gate` was lost, meaning the attention policy never ran. Each wrapper now sets `__name__` explicitly, with a source-level regression assertion.
+- Symptom: after upgrading to 0.5.x the live instance produced 172 inbound events / 94 replies / 0 attention decisions in 30 minutes; after the fix `attention_gate` intercepts ambient group chats again.
+
+## 0.5.3 — 2026-10-28
+
+### 中文
+
+- 修复 `AttentionHooks` 访问 `_may_observe` 抛 `'Main' object has no attribute '_may_observe'`：该 helper 在 `host.hooks` 上，不在宿主本身；现在显式委托 `host` 或 `host.hooks`，并加回归测试。
+
+### English
+
+- Fix `AttentionHooks` raising `'Main' object has no attribute '_may_observe'`: the helper lives on `host.hooks`, not the host object; it now delegates explicitly and has a regression test.
+
 ## Unreleased
 
 ### 中文
+
+- 星图每次加载最多读取 120 条记忆和 240 条关联，默认显示 80 条，40/80/120 切换不再请求；移除千节点选项与后台布局，避免预读过多记忆。
+
+- 将星图读取改为数据库限量快照与批量关联查询；补齐抽屉中的键盘列表、聚焦和关联视图，修复普通 HTTP 页面保存人格包的随机 ID 兼容性。保持数据库格式与公开配置不变。
+
+- 兼容 v0.5.0 的 AstrBot 包结构，修正内置人格包路径，保留上游动作审计及自动测试发现机制；验证人格包、Dream 历史及重启恢复。无额外数据库或配置变更。
+
+- 同步 v0.4.3 后的宿主运行时，保留人格包与 Dream 控制台接线；补齐重载及启动失败重试验证，将控制台文档迁入中英双语目录，日志增加“允许回复／本轮不回复”状态筛选。无新增数据库或配置变更。
+
+- 按界面反馈移除星图数量提示、关联筛选入口、底部键盘列表及重复详情按钮；浮动卡片的详情按钮跟随记忆点配色，明黄、淡绿使用深色文字。
+
+- 修复星图入场计时停止后亮面残留：高亮在入场结束前淡出，常态只随波纹短暂亮起；将土黄、橄榄黄绿调整为明黄、淡绿，并统一明暗主题。
+
+- 收紧星图节点光晕，改用单路接力的淡色连线脉冲，无亮头或拖尾；入场沿球面由左向右分支扩散，镜头稍滞后于前沿，在 6.6 秒内逆时针环绕一整圈，同步拉远并居中，避免末尾额外平移，支持中途接管视角与减少动态效果。
+
+- 星图改用高对比发光节点，面片只随波纹或入场短暂亮起；默认显示最近更新 80 条（可选 40/80/120），随数量放大默认半径，进入/刷新时播放点→线→面→体动画。点击横幅展开既有详情接口返回的正文与元信息，保留受保护内容遮蔽并丢弃过期请求。
+
+- 记忆星图改为可旋转的立体记忆球，支持同类分组、分类配色、呼吸/波纹/流光、悬停凸起及信息框、点击固定与缩放；球面网格与真实关联区分呈现，修复交互时重建画布造成的闪动，筛选收进抽屉；生命周期日志改为只读控制台，支持定时刷新、暂停更新、自动跟随及展开详情，保留既有筛选与脱敏接口。
+
+- 根据 DeepSeek 首页与 Harness 实际页面调整明暗主题：浅蓝白底与淡网格、石墨黑底与柔和蓝光；侧栏、面板和抽屉加入适量磨砂玻璃层次，补齐页面进入、侧栏折叠与悬停动效，并适配减少动态效果偏好。
+
+- 记忆筛选收拢为单一入口，提供带解释的类型/范围选项、明确的记忆条数和可逐个取消的条件标签；修复侧栏收起后文字溢出及预览页底部按钮超出视口。
+
+- 记忆库改为单栏列表：统计收拢为摘要，集中类型/状态/范围/会话筛选并支持统一重置，详情改为点击后打开抽屉。
+
+- 记忆库移除重复的独立侧栏，将类型及数量合并至列表筛选，统一桌面与窄屏入口。
+
+- 首页采用居中人格展示与下方运行/成长分栏，调整标题、胶囊按钮与留白；按用户提供的画风和人设参考生成透明 Q 版头像，替换首页与小铺的鱼插画。
+
+- 管理面板统一蓝白黑配色，图表与深色模式共用主题；移除装饰英文、重复说明与页脚标语，以留白和标题层级组织内容。
+
+- 控制台改用分组式左侧导航，支持桌面折叠和窄屏图标栏，连接状态与刷新移至侧栏底部。
+
+- 人格控制台接入历史版本回滚、差异比较与变化原因；安装时校验预览内容，按版本显示已安装状态；Dream 日志区分预算停止与完成，并显示调度开关。新增控制台接口需与 dashboard 同步更新，不涉及数据库迁移或配置变化（#82 / #83）。
+
+### English
+
+- Read at most 120 graph nodes and 240 associations on load, display 80 nodes by default, and switch between 40/80/120 locally. Remove the 1,000-node option and background layout to avoid excessive prefetching.
+
+- Bound graph reads in SQL and batch association queries; add a drawer-based keyboard list, focus and neighborhood actions, HTTP-compatible random persona-pack IDs. Database formats and public configuration are unchanged.
+
+- Integrate the v0.5.0 AstrBot package layout, correct the built-in persona-pack path, and retain upstream action auditing and automatic test discovery. Verify persona packs, Dream history and restart recovery without additional database or configuration changes.
+
+- Integrate the post-v0.4.3 host runtime while retaining persona-pack and Dream console wiring. Verify reload and failed-start retry, move console documentation into the bilingual tree, and expose allow-reply/skip-reply log filters. No additional database or configuration changes.
+
+- Remove the graph count, relation filter, bottom keyboard list and duplicate detail action. Match floating-card detail buttons to their memory node colors with dark text on bright yellow and light green.
+
+- Fade memory-sphere assembly highlights before the entrance clock stops, preventing permanently lit facets while retaining transient ripple illumination. Replace ochre and olive tones with clear yellow and light green in both themes.
+
+- Tighten node halos and replace travelling heads/tails with one muted, continuous edge-pulse relay. Sweep the entrance left to right along branching mesh paths while the camera trails the frontier through exactly one counterclockwise turn in 6.6 seconds, pulling back and centering continuously without a separate final translation; support interaction takeover and reduced motion.
+
+- Use higher-contrast luminous nodes and transient ripple/assembly facets. Show the 80 most recently updated memories by default (40/80/120 choices), scale the default radius with density, and assemble points → lines → faces → volume on entry/refresh. Expand annotations on selection using the existing detail API, retaining protected-content masking and discarding stale replies.
+
+- Rework the memory map into a rotatable 3D memory sphere with category patches, muted colors, breathing/ripple/flow motion, raised hover nodes, annotations, pinned selection and zoom. Distinguish surface geometry from real relationships and avoid canvas recreation during interaction; move filters into a drawer. Present lifecycle logs as a read-only console with polling, pause, follow-latest and expandable details, retaining existing filters and sanitized APIs.
+
+- Adapt light/dark themes from the live DeepSeek and Harness pages: icy-blue backgrounds and a faint grid, graphite surfaces and soft blue light. Add restrained frosted navigation, panels and drawers, plus page-entry, sidebar and hover motion with reduced-motion support.
+
+- Consolidate memory filters into one entry with explained type/scope choices, explicit record counts and removable filter chips; fix collapsed sidebar text overflow and off-screen preview footer controls.
+
+- Simplify the memory library to a single list with inline statistics, unified category/state/scope/session filters and reset, and on-demand detail drawers.
+
+- Remove the duplicate memory-library sidebar and move category counts into the list filter, shared across desktop and narrow layouts.
+
+- Recompose the home page around a centered persona and separate activity/history columns, with lighter headings, pill buttons and more whitespace; replace the home/store fish with a transparent chibi head generated from user-supplied style and character references.
+
+- Unify the dashboard around blue, white and neutral black, including charts and dark mode; remove decorative labels, repeated introductions and footer slogans in favor of spacing and clear headings.
+
+- Replace console top navigation with a grouped left sidebar, desktop collapse and a compact icon rail on narrow screens; move connection status and refresh to its footer.
+
+- Connect persona rollback with version diffs and change reasons; validate previewed pack content before installation and show installed versions accurately. Dream distinguishes budget stops from completion and reports scheduling state. Ship the new console API and dashboard together; no database migration or configuration change (#82 / #83).
+
+## 0.5.0 — 2026-10-28
+
+### 中文
+
+- 修复 Source 回查的新鲜度排序：带时区时间戳与本地时间混用时，按实际经过时间计分，避免近期消息被当成旧消息；无时区时间按本地时间解释，不修改历史数据或配置。
+- 修复印象合并的部分提交和成功误报：强化或改写旧印象与退役新印象通过同一事务提交，成功后再更新缓存；写入失败和版本冲突由服务层记录。两条变更统一按 merge 审计，沿用现有数据库格式（#138）。
+- 新增默认关闭的主动决策纯策略，显式处理到期时间、安静窗口、冷却、重试、忽略连击退避和最大尝试次数；有界选择器优先派发最早到期会话，其余保持待处理。
+- 扩展 `runtime_episodes` 保存无正文的动作尝试与终态；重复回调幂等，每个 action 最多保留一个终态，并沿用现有保留清理。
+- 新增 `AgentRuntime.schedule_proactive()` 和 AstrBot `proactive_idle_seconds` 排期入口；主动策略从纯策略接到真实 worker。宿主发送动作也进入 action ledger，成功/失败均形成无正文终态。
+- 将 AgentRuntime 默认注意力收敛为单一 `DefaultAttentionPolicy`：主人/私聊/直接提及回复，非主人直接提及后按说话人保留 3 轮后续回复；移除默认路径中的额度、preset、阈值、关系/热度信号和场景提示，策略结果只通过 `AttentionDecision` 向 Runtime 返回通用状态补丁。
+- 收口 Runtime action 链路：新增 `ActionExecutor` 统一 attempt/terminal 与 `ActionPort` 执行，`ActionMessageSender` 仅作为 `SEND_TEXT` 兼容适配器；AstrBot 发送/工具审计统一走 ActionExecutor，不再直接操作 ledger。
+
+### English
+
+- Fix Source recall recency ranking when offset-aware timestamps are mixed with local time: score actual elapsed time instead of treating recent messages as old. Naive timestamps use local time; stored data and configuration are unchanged.
+- Fix partial commits and false success in impression consolidation: updating the existing impression and retiring the incoming one share a transaction, with cache updates after commit. Write failures and revision conflicts reach service-layer error handling. Both changes are audited as merge operations using the existing database format (#138).
+- Add a default-closed pure proactive policy for due times, quiet windows, cooldown, retry, ignored-streak backoff and maximum attempts. Its bounded selector dispatches the oldest eligible sessions first and leaves the rest pending.
+- Extend `runtime_episodes` with content-free action attempts and terminal outcomes. Duplicate callbacks are idempotent, each action keeps at most one terminal outcome, and existing retention cleanup applies.
+- Add `AgentRuntime.schedule_proactive()` and the AstrBot `proactive_idle_seconds` scheduling entry so the pure proactive policy reaches the real worker. Host send actions now enter the action ledger with content-free success/failure terminals.
+- Collapse the default AgentRuntime attention path to one `DefaultAttentionPolicy`: owner, private, and direct attention reply; a non-owner direct interaction retains a per-speaker three-round follow-up window; quota, presets, thresholds, relationship/heat signals, and scene hints are removed from the default path. Policy results return a generic state patch through `AttentionDecision`.
+
+- Collapse the runtime action path: `ActionExecutor` now owns attempt/terminal coordination around `ActionPort`, while `ActionMessageSender` is only a `SEND_TEXT` compatibility adapter. AstrBot send/tool audit now goes through ActionExecutor instead of touching the ledger directly.
+
+## 0.4.3 — 2026-10-27
+
+### 中文
+
+- 开口策略改为「主人必回、陌生人只在被 @ 或叫名字时回，且点名后陪聊 3 轮」：新增 `quota_gate` 纯函数（私聊/主人恒放行、点名刷新额度、普通消息消耗额度），修复 `stranger_quota_mode=off` 时连 @ 也被拦、以及 WAIT 决策不消耗额度的问题；新增 `attention_address_names`（默认「大肥鱼,肥鱼」），叫名字等同被点名。配置：`stranger_quota_mode=fixed:3`、`attention_thresholds={"owner_cooldown_seconds": 0}`。
+
+### English
+
+- Attention now means: the owner always gets a reply; strangers only when @-mentioned or called by name, then three follow-up rounds. Add the pure `quota_gate` (private/owner always allowed, mention refreshes quota, ambient messages consume it) and fix two bugs: `stranger_quota_mode=off` blocked even @-mentions, and WAIT decisions never consumed quota. Add `attention_address_names` (default `大肥鱼,肥鱼`). Deployed config: `stranger_quota_mode=fixed:3`, `attention_thresholds={"owner_cooldown_seconds": 0}`.
+
+## 0.4.2 — 2026-10-27
+
+### 中文
+
+- 修复运行时交付与恢复：冷却从实际发送完成计时，失败从实际失败时刻退避；普通和延迟回复仅确认本轮覆盖的消息。延迟任务取消或重启后仍可有限重试，轮询与直接调用共用并发上限。复用现有会话状态字段，无数据库迁移或新增配置；宿主不再用待抽取队列长度推算未读数。AstrBot 通过同一适配层时间钩子统一为 UTC+8，新时间带 +08:00 标记，内核读取格式和历史 Source 保持不变；没有时区的旧值保留原样。
+- 记忆感知的开口策略默认开启：AstrBot 事件经 `adapters/astrbot_event.py` 映射为 `RuntimeInput`，`adapters/astrbot_attention.py` 调策略后放行/`stop_event`；预设 quiet/balanced/chatty/intimate，陌生人额度按关系与配置，场景提示注入系统提示。group_guard 与 persona_gate 因此停用，由 SeekMemory 接管；连发合并与主动私聊仍由 message_merger / ping 插件负责（等 #116/#117）。基础件：`RuntimeInput` 向后兼容扩展多平台字段（scene/conversation_id/thread_id/role/addressed/reply_to_me 等，scene 预留 comment 评论区）；新增 `adapters/astrbot_event.py`（宿主事件→RuntimeInput 纯映射）与端到端策略测试；新增 `app/runtime/signals.py`（关系/相关度/热度/时间窗信号）、`attention.py`（纯函数策略，硬条件优先、主人冷却、陌生人关系额度）、`scene_hints.py`（时间/身份/亲疏提示）、`topics.py`（主动话题候选与冷却过滤）。只新增契约与纯函数，不改变线上行为（#123）。
+- 事件分层决策：暂不引入 HostEvent/ContentPart/EventCodec，宿主适配层直接产出扩展后的 `RuntimeInput`；演进触发条件见 `docs/zh/architecture/event-contract.md`。
+
+### English
+
+- Memory-aware attention is on by default: AstrBot events map to `RuntimeInput` via `adapters/astrbot_event.py`, `adapters/astrbot_attention.py` runs the policy and allows/`stop_event`s; presets quiet/balanced/chatty/intimate, stranger quota by relationship and config, scene hints injected into the system prompt. group_guard and persona_gate are retired in favour of SeekMemory; message merging and proactive DMs stay in the message_merger / ping plugins until #116/#117. Groundwork: backward-compatible multi-platform fields on `RuntimeInput` (scene/conversation_id/thread_id/role/addressed/reply_to_me, with `comment` reserved for comment sections); add a pure host-event mapper (`adapters/astrbot_event.py`) and end-to-end policy tests; new pure modules `signals.py` (relationship/relevance/heat/window), `attention.py` (hard conditions first, owner cooldown, stranger quota by relationship), `scene_hints.py` (time/role/closeness hints) and `topics.py` (proactive topic candidates with cooldown filtering). Contracts and pure functions only; no live behavior change (#123).
+- Event layering decision: no HostEvent/ContentPart/EventCodec yet; host adapters emit the extended `RuntimeInput` directly. Evolution triggers are recorded in `docs/zh/architecture/event-contract.md`.
 
 - 修复 seed 人格注入被 180 字上限截断：`_persona_sentence()` 不再复用单条记忆的清洗函数，人格整段进入常驻层，长度只由注入预算约束；新增 `scripts/bootstrap_persona.py`（含 `--dry-run`）与回归测试 `tests/test_persona_injection.py`（ISSUE-0034 / PR-0034）。
 
@@ -13,6 +165,8 @@
 - 将仓库约定拆分为 repo skill 与四份主题 reference，通过 Codex/Claude Code symlink 共用；简化 PR 模板以收集范围、验证和兼容性证据。扫描器待 UI 规则明确后再加入。PR CI 继续全量检查，本地验证按风险选择。
 
 ### English
+
+- Fix runtime delivery and recovery: cooldown starts at confirmed send completion, backoff starts at failure, and normal/deferred replies acknowledge only input covered by that run. Deferred work remains recoverable with bounded retries after cancellation or restart, and scans/direct calls share a concurrency limit. Existing session fields are reused without database migration or new configuration. The host no longer infers unread counts from the extraction queue. AstrBot uses one adapter time hook for UTC+8 with an explicit +08:00 offset on new timestamps, preserving kernel read formats, historical Sources, and legacy values without timezone information.
 
 - Fix seed persona injection being truncated at 180 characters: `_persona_sentence()` no longer reuses the per-memory cleaner, so the whole persona reaches the pinned layer and only the injection budget bounds it; add `scripts/bootstrap_persona.py` (with `--dry-run`) and the `tests/test_persona_injection.py` regression suite (ISSUE-0034 / PR-0034).
 

@@ -10,11 +10,16 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from adapters.astrbot_model import AstrBotModelGateway  # noqa: E402
-from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
-from app.runtime import RunDecision, WakeAction  # noqa: E402
+from adapters.astrbot.model import AstrBotModelGateway  # noqa: E402
+from adapters.astrbot.runtime import AstrBotRuntimeAdapter  # noqa: E402
+from app.runtime import WakeAction, RunDecision, UserRunReceipt  # noqa: E402
 from core.interaction_policy import InteractionGate, ReplyStyle  # noqa: E402
 from core.source import make_source_id  # noqa: E402
+
+
+class At:
+    def __init__(self, qq: str) -> None:
+        self.qq = qq
 
 
 class Event:
@@ -23,9 +28,14 @@ class Event:
         self.extras = {}
         self.created_at = 0.0
         self.unified_msg_origin = "bot:GroupMessage:g1"
+        self.self_id = "bot-1"
+        self.at_me = False
 
     def is_private_chat(self) -> bool:
         return self.private
+
+    def get_messages(self):
+        return [At(self.self_id)] if self.at_me else []
 
     def get_sender_id(self) -> str:
         return "u1"
@@ -38,19 +48,44 @@ class Event:
 
 
 class AdapterTest(unittest.TestCase):
-    def test_private_event_maps_actual_host_direct_signal(self) -> None:
+    def test_private_event_is_private_but_not_addressed_without_host_signal(self) -> None:
         event = Event(True)
         result = AstrBotRuntimeAdapter.from_event(
             event, "hello?", "s1", "u1", unread_count=3
         )
         self.assertTrue(result.private)
-        self.assertFalse(result.mentioned)
+        self.assertTrue(result.mentioned)
+        self.assertFalse(result.addressed)
         self.assertTrue(result.question)
         self.assertEqual(result.unread_count, 3)
-        event.is_at_or_wake_command = True
-        self.assertTrue(
-            AstrBotRuntimeAdapter.from_event(event, "hello", "s1", "u1").mentioned
+        event.at_me = True
+        direct = AstrBotRuntimeAdapter.from_event(event, "hello", "s1", "u1")
+        self.assertTrue(direct.mentioned)
+        self.assertTrue(direct.addressed)
+
+    def test_source_event_time_parses_iso_and_defaults_to_zero(self) -> None:
+        self.assertEqual(
+            AstrBotRuntimeAdapter.source_event_time(
+                {"at": "1970-01-01T00:00:10+00:00"}
+            ),
+            10.0,
         )
+        self.assertEqual(AstrBotRuntimeAdapter.source_event_time({}), 0.0)
+        self.assertEqual(
+            AstrBotRuntimeAdapter.source_event_time({"at": "not-a-time"}), 0.0
+        )
+
+    def test_source_time_without_offset_has_unknown_instant(self) -> None:
+        self.assertEqual(
+            AstrBotRuntimeAdapter.source_event_time({"at": "1970-01-01T08:00:10"}),
+            0.0,
+        )
+
+    def test_received_at_uses_injected_host_clock(self) -> None:
+        result = AstrBotRuntimeAdapter.from_event(
+            Event(False), "ambient", "g1", "u1", clock=lambda: 42.5
+        )
+        self.assertEqual(result.received_at, 42.5)
 
     def test_event_timestamp_and_unread_watermark_are_mapped(self) -> None:
         event = Event(False)
@@ -58,7 +93,7 @@ class AdapterTest(unittest.TestCase):
         result = AstrBotRuntimeAdapter.from_event(
             event, "ambient", "g1", "u1", unread_count=4, unread_seq=9
         )
-        self.assertEqual(result.at, 123.5)
+        self.assertEqual(result.event_time, 123.5)
         self.assertEqual(result.unread_count, 4)
         self.assertEqual(result.unread_seq, 9)
 
@@ -68,7 +103,7 @@ class AdapterTest(unittest.TestCase):
         result = AstrBotRuntimeAdapter.from_event(
             event, "ambient", "g1", "u1", unread_count=-3, unread_seq=-2
         )
-        self.assertEqual(result.at, 0.0)
+        self.assertEqual(result.event_time, 0.0)
         self.assertEqual(result.unread_count, 0)
         self.assertEqual(result.unread_seq, 0)
 
@@ -80,11 +115,19 @@ class AdapterTest(unittest.TestCase):
         self.assertFalse(result.mentioned)
         self.assertFalse(result.question)
 
-    def test_wake_command_marks_group_message_as_direct(self) -> None:
+    def test_wake_command_alone_is_not_a_mention(self) -> None:
+        """wake_prefix 为空时每条消息都会唤醒，不能据此认为被 @。"""
         event = Event(False)
         event.is_at_or_wake_command = True
         result = AstrBotRuntimeAdapter.from_event(event, "hello", "g1", "u1")
+        self.assertFalse(result.mentioned)
+
+    def test_at_component_marks_group_message_as_direct(self) -> None:
+        event = Event(False)
+        event.at_me = True
+        result = AstrBotRuntimeAdapter.from_event(event, "hello", "g1", "u1")
         self.assertTrue(result.mentioned)
+        self.assertTrue(result.addressed)
 
     def test_model_gateway_resolves_provider_and_returns_text(self) -> None:
         class Provider:
@@ -143,6 +186,24 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(event.extras["_seekmemory_runtime_action"], "observe")
         self.assertEqual(event.extras["_seekmemory_runtime_reason"], "ambient_message")
         self.assertIs(AstrBotRuntimeAdapter.interaction_gate(event), gate)
+
+    def test_accepted_cursor_survives_reply_metadata_binding(self) -> None:
+        event = Event(False)
+        receipt = UserRunReceipt(
+            RunDecision(WakeAction.REPLY, "direct_attention"),
+            "u1", "t1", read_through_seq=7,
+        )
+        AstrBotRuntimeAdapter.bind_user(event, receipt)
+        AstrBotRuntimeAdapter.bind_reply(event, SimpleNamespace(
+            turn_id="t1", assistant_source_id="a1", response_chars=2,
+        ))
+        self.assertEqual(AstrBotRuntimeAdapter.read_through_seq(event), 7)
+
+    def test_missing_or_invalid_cursor_is_not_an_acknowledgement(self) -> None:
+        event = Event(False)
+        for value in (None, "7", -1, True):
+            event.set_extra("_seekmemory_read_through_seq", value)
+            self.assertIsNone(AstrBotRuntimeAdapter.read_through_seq(event))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import { consoleClient } from "./console-client.ts"
 import { z } from "zod"
 import type { ApiRequest, ApiResponse } from "../contracts/api.ts"
 import { memoryCollectionSchema } from "../features/memory/model.ts"
@@ -48,6 +49,7 @@ const idResponseSchema = z.object({ id: z.string() }) satisfies z.ZodType<
 >
 
 export const astrbotClient: ManagementClient = {
+  console: consoleClient(bridge),
   async traces() {
     const host = await bridge()
     return tracesSchema.parse(await host.apiGet("manage/traces"))

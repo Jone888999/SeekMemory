@@ -8,7 +8,7 @@ Contracts have different owners. Use the current implementation as the source of
 | Application ports and DTOs | `app/ports.py` and `app/contracts.py` | Calling services/adapters, the owning module page, and contract tests |
 | SQLite schema and persisted data | `store/schema.sql`, `store/sqlite.py`, and repositories under `store/` | Compatible migrations, recovery behavior, and persistence tests; review [compatibility decisions](changelog-compatibility.md) before breaking changes |
 | AstrBot plugin configuration | Root `_conf_schema.json` plus the defaults and reads in `adapters/` | Keep schema, runtime defaults, UI behavior, and user-facing guidance aligned; review compatibility before renaming or removing a setting |
-| Management HTTP API | Root [`openapi.yaml`](../../../../openapi.yaml) | `webui/routes.py`, `services/management_service.py`, Zod runtime schemas, and API fixtures |
+| Management HTTP API | Root [`openapi.yaml`](../../../../openapi.yaml) | `adapters/astrbot/web.py`, `services/management_service.py`, Zod runtime schemas, and API fixtures |
 | Generated dashboard API types | `dashboard/src/contracts/generated.ts` | Regenerate from `openapi.yaml`; do not edit generated output by hand. See the [API change workflow](../../../../docs/en/guides/development.md#changing-the-management-api) and [dashboard README](../../../../dashboard/README.md). |
 
 ## Change sequence

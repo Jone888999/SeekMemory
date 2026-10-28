@@ -12,6 +12,22 @@
 
     python3 -m pip install -r requirements-dev.txt
 
+## 文档站点
+
+文档站点使用 Material for MkDocs，并通过独立的 requirements-docs.txt 管理依赖。本地构建使用 Python 3.10 或更新版本；CI 使用 Python 3.12。
+
+在仓库根目录安装文档依赖：
+
+    python3 -m pip install -r requirements-docs.txt
+
+启动本地预览（默认地址为 http://127.0.0.1:8000）：
+
+    mkdocs serve
+
+执行严格构建：
+
+    mkdocs build --strict
+
 ## 后端验证层
 
 脚本依据 tests/layers.py 把平铺的 unittest 文件分为多个责任层。按改动选择适当范围：
@@ -54,4 +70,17 @@ check 包含类型生成检查、TypeScript、lint、前端测试和格式检查
 - 修改数据语义时，同步更新对应的 core、store、perceive、recall 或 maintain 模块页。
 - 修改事件路径、服务组合或宿主边界时，更新架构总览和对应模块页。
 - 文档只描述已由当前代码确认的行为；工作计划和 review 记录留在 GitHub Issues/PRs，不在 docs 中建立 RFC 或逐项工作档案。
-- 本仓库不使用 MkDocs；中文和英文文档在 docs/zh 与 docs/en 镜像维护。
+- 中文和英文页面在 docs/zh 与 docs/en 镜像维护；站点导航配置见 mkdocs.yml，页面结构由 scripts/check_docs_structure.py 校验。
+
+## 人格控制台预览与人格包
+
+Mock 控制台使用 #/home、#/studio、#/memory、#/store、#/dream、
+#/system?section=traces 等 hash 路由。预览选择器提供加载、空、错误和
+1,000 节点／2,000 关联压力数据。预览中的安装、导入及编辑只操作内存数据。
+dev:host 和生产构建必须使用已认证的 AstrBot 页面桥接器。
+
+内置人格文件位于 persona_seeds/&lt;id&gt;/persona.json。新增时在 index.json
+登记 ID，附带 LICENSE，并遵循[人格 seed 指南](persona-seed.md)。本地导入写入
+插件数据目录的 persona_packs/。移除把文件移到 .trash，不改变当前人格。
+恢复时检查备份 JSON 的 ID 和版本，再从“我的人格包”导入。覆盖同 ID 文件需要在
+确认时提供当前版本；更新蓝图不会自动安装。

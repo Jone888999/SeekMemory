@@ -21,6 +21,10 @@ sys.path.insert(0, str(ROOT.parent))
 sys.path.insert(0, str(ROOT / "tests"))
 from contract_support import validate_contract  # noqa: E402
 
+RuntimePackage = importlib.import_module(f"{ROOT.name}.app.runtime")
+ActionExecutor = RuntimePackage.ActionExecutor
+ActionResult = RuntimePackage.ActionResult
+
 try:
     from starlette.requests import Request
 
@@ -30,6 +34,18 @@ except ImportError:
     Main = None
 else:
     Main = importlib.import_module(f"{ROOT.name}.main").Main
+
+
+def action_executor_for(sender) -> ActionExecutor:
+    class Port:
+        async def execute(self, request):
+            result = await sender.send(request.session_id, request.text)
+            return ActionResult(
+                result is not False,
+                "" if result is not False else "host_send_failed",
+            )
+
+    return ActionExecutor(Port(), None)
 
 
 class HostContext:
@@ -196,6 +212,108 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(task.done() for task in tasks))
         self.assertEqual(self.context.registered_web_apis, [])
         self.assertIsNone(self.plugin.store)
+
+    async def test_concurrent_lifecycle_rebuilds_one_runtime_and_resets_closed_references(self) -> None:
+        runtime = self.plugin.services.runtime
+        worker = self.plugin.services.runtime_worker
+        await asyncio.gather(*(self.plugin.initialize() for _ in range(3)))
+        self.assertIs(self.plugin.services.runtime, runtime)
+        self.assertIs(self.plugin.services.runtime_worker, worker)
+        self.assertIs(worker.runtime, runtime)
+        self.assertIs(runtime.action_executor, self.plugin.action_executor)
+        tasks = list(self.plugin.services.background_service.tasks)
+        await asyncio.gather(self.plugin.terminate(), self.plugin.terminate())
+        self.assertTrue(all(task.done() for task in tasks))
+        for name in ("services", "store", "buffer", "cache", "jobs", "web", "actions", "run_tracer"):
+            self.assertIsNone(getattr(self.plugin, name), name)
+        self.assertFalse(self.plugin.ready)
+        await asyncio.gather(self.plugin.initialize(), self.plugin.initialize())
+        self.assertTrue(self.plugin.ready)
+        self.assertIsNot(self.plugin.services.runtime, runtime)
+        self.assertIsNot(self.plugin.services.runtime_worker, worker)
+        self.assertEqual(len(self.context.registered_web_apis), 1)
+
+    async def test_failed_host_registration_releases_partial_start_and_can_retry(self) -> None:
+        await self.plugin.terminate()
+        original = self.context.register_web_api
+
+        def broken_registration(*args):
+            original(*args)
+            raise RuntimeError("private host detail")
+
+        with patch.object(self.context, "register_web_api", side_effect=broken_registration):
+            with self.assertRaises(RuntimeError):
+                await self.plugin.initialize()
+        self.assertFalse(self.plugin.ready)
+        self.assertIsNone(self.plugin.services)
+        self.assertIsNone(self.plugin.store)
+        self.assertEqual(self.context.registered_web_apis, [])
+        await self.plugin.initialize()
+        self.assertTrue(self.plugin.ready)
+
+    async def test_engine_failure_after_open_does_not_leave_a_live_partial_engine(self) -> None:
+        await self.plugin.terminate()
+        module = f"{ROOT.name}.adapters.astrbot.plugin"
+        with patch(f"{module}.Cache.load", side_effect=RuntimeError("private storage detail")):
+            await self.plugin.initialize()
+        self.assertFalse(self.plugin.ready)
+        self.assertIsNone(self.plugin.store)
+        self.assertIsNone(self.plugin.cache)
+        self.assertIsNone(self.plugin.services)
+        await self.plugin.initialize()
+        self.assertTrue(self.plugin.ready)
+
+    async def test_cleanup_failure_still_releases_other_resources(self) -> None:
+        tasks = list(self.plugin.services.background_service.tasks)
+        with patch.object(self.plugin.buffer, "save", side_effect=RuntimeError("private buffer detail")):
+            await self.plugin.terminate()
+        self.assertTrue(all(task.done() for task in tasks))
+        self.assertIsNone(self.plugin.store)
+        self.assertEqual(self.context.registered_web_apis, [])
+        await self.plugin.initialize()
+        self.assertTrue(self.plugin.ready)
+
+    async def test_cancelled_stop_waits_for_cleanup_before_propagating(self) -> None:
+        background = self.plugin.services.background_service
+        original = background.stop
+        entered, release = asyncio.Event(), asyncio.Event()
+        tasks = list(background.tasks)
+
+        async def delayed_stop():
+            entered.set()
+            await release.wait()
+            await original()
+
+        with patch.object(background, "stop", side_effect=delayed_stop):
+            stopping = asyncio.create_task(self.plugin.terminate())
+            await entered.wait()
+            stopping.cancel()
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await stopping
+        self.assertTrue(all(task.done() for task in tasks))
+        self.assertIsNone(self.plugin.store)
+        self.assertIsNone(self.plugin.services)
+
+    async def test_late_host_callbacks_after_stop_are_ignored_without_stale_access(self) -> None:
+        event = PrivateEvent("remember this", "stopped-turn")
+        await self.restart_plugin(owner_umo=event.unified_msg_origin)
+        await self.plugin.buffer_message(event)
+        await self.plugin.terminate()
+        extras = dict(event.extras)
+        await self.plugin.observe_agent_begin(event, None)
+        await self.plugin.observe_agent_done(event, None, SimpleNamespace(role="err"))
+        await self.plugin.observe_tool(event, SimpleNamespace(name="memory_search"), {"query": "private"})
+        await self.plugin.observe_tool_result(event, SimpleNamespace(name="memory_search"), {}, "private result")
+        await self.plugin.buffer_message(event)
+        await self.plugin.capture_reply(event, SimpleNamespace(completion_text="late reply"))
+        await self.plugin.record_delivery(event)
+        await self.plugin.attention_gate(event)
+        self.assertEqual(event.extras, extras)
+        self.assertIsNone(self.plugin.services)
+        await self.plugin.initialize()
+        rows = self.plugin.store.sources.recent_sources(since="", limit=10)
+        self.assertEqual([row.role for row in rows], ["user"])
 
     async def test_failed_extraction_preserves_buffer(self) -> None:
         class Provider:
@@ -417,13 +535,13 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         await self.restart_plugin(open_to="everyone")
 
         class FailedMemoryContext:
-            def build_context(self, event):
-                raise RuntimeError(f"db path /secret: {event.text}")
+            def build_context(self, request):
+                raise RuntimeError(f"db path /secret: {request.query}")
 
         self.plugin.services.runtime.memory_context = FailedMemoryContext()
         event = PrivateEvent("private message body")
         req = SimpleNamespace(system_prompt="base")
-        hooks = importlib.import_module(f"{ROOT.name}.adapters.astrbot_hooks")
+        hooks = importlib.import_module(f"{ROOT.name}.adapters.astrbot.hooks")
         with patch.object(hooks.logger, "error") as error_log:
             await self.plugin.inject_memory(event, req)
 
@@ -456,6 +574,63 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.plugin.store.extraction.pending_extractions(), [])
         self.assertIsNone(self.plugin.store.sources.latest_user_source(event.unified_msg_origin))
         self.assertFalse(any(row["kind"] == "recall" for row in self.plugin.journal.events))
+
+    async def test_normal_delivery_acknowledges_its_event_without_clearing_new_input(self) -> None:
+        await self.restart_plugin(open_to="everyone")
+        first = PrivateEvent("first", "delivery-first")
+        second = PrivateEvent("second", "delivery-second")
+        third = PrivateEvent("third", "delivery-third")
+        await self.plugin.buffer_message(first)
+        await self.plugin.buffer_message(second)
+        self.assertEqual(first.get_extra("_seekmemory_read_through_seq"), 1)
+        self.assertEqual(second.get_extra("_seekmemory_read_through_seq"), 2)
+        await self.plugin.capture_reply(
+            first, SimpleNamespace(role="assistant", completion_text="first reply"),
+        )
+        await self.plugin.record_delivery(first)
+        state = self.plugin.services.runtime.store.get(first.unified_msg_origin)
+        self.assertEqual(state.read_through_seq, 1)
+        self.assertEqual(state.unread_count, 1)
+        await self.plugin.capture_reply(
+            second, SimpleNamespace(role="assistant", completion_text="second reply"),
+        )
+        await self.plugin.record_delivery(second)
+        await self.plugin.buffer_message(third)
+        await self.plugin.record_delivery(first)
+        state = self.plugin.services.runtime.store.get(first.unified_msg_origin)
+        self.assertEqual(state.read_through_seq, 2)
+        self.assertEqual(state.unread_count, 1)
+        episodes = self.plugin.store.runtime_episodes.list(first.unified_msg_origin)
+        self.assertEqual(len(episodes), 2)
+
+    async def test_old_processed_parent_uses_utc8_view_without_rewriting_evidence(self) -> None:
+        source_module = importlib.import_module(f"{ROOT.name}.core.source")
+        session_id = "bot:GroupMessage:legacy-parent"
+        original_at = "2026-10-27T15:00:00+00:00"
+        self.plugin.store.sources.append_sources([source_module.Source(
+            "old-user", "old-turn", session_id, "u1", "user", "旧消息", original_at,
+        )])
+        self.plugin.buffer.add(
+            session_id, "新回复", "bot", "new-reply", "2026-10-27T15:00:05+00:00",
+            turn_id="old-turn", reply_to="old-user", role="assistant",
+        )
+        # Restart/chunk boundaries may leave only the reply in pending input.
+        self.plugin.buffer.reload()
+
+        class Model:
+            async def complete(self, request):
+                return SimpleNamespace(text=json.dumps([{
+                    "level": "fact", "text": "有证据的结论",
+                    "evidence_source_ids": ["old-user", "new-reply"],
+                }]))
+
+        outcome = await self.plugin.services.ingest_service.extract(
+            list(self.plugin.buffer.items), Model(),
+        )
+        self.assertFalse(outcome.retryable, outcome.errors)
+        self.assertEqual(outcome.written, 1)
+        saved = self.plugin.store.sources.sources_by_ids(["old-user"])["old-user"]
+        self.assertEqual(saved.at, original_at)
 
     async def test_deferred_wait_dispatches_once(self) -> None:
         source_module = importlib.import_module(f"{ROOT.name}.core.source")
@@ -494,7 +669,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
 
         actions = Actions()
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
         self.assertEqual(provider.calls[0][0], "ambient deferred message")
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
@@ -549,7 +724,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
             return provider
 
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.tick()
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
         self.assertEqual(provider.calls, 0)
@@ -599,7 +774,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
 
         actions = Actions()
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.tick()
         self.assertEqual(actions.sent, [(session_id, "retry-only reply")])
 
@@ -633,7 +808,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
 
         actions = Actions()
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.tick()
         await self.plugin.services.runtime_worker.tick()
         self.assertEqual(actions.sent, [(session_id, "tick reply")])
@@ -691,8 +866,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
             return Provider()
 
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = Actions()
-        self.plugin.services.runtime.message_sender = self.plugin.services.runtime.message_sender
+        self.plugin.services.runtime.action_executor = action_executor_for(Actions())
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
         state = self.plugin.services.runtime.store.get(session_id)
         self.assertGreater(state.wait_until, now)
