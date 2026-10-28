@@ -21,8 +21,9 @@ def kind(art: Artifact) -> str:
     return art.header.family
 
 
-def graph(artifacts: ArtifactStore, *, limit: int = 1000) -> dict:
+def graph(artifacts: ArtifactStore, *, limit: int = 120) -> dict:
     rows = artifacts.list_recent(limit)
+    edge_limit = limit * 2
     nodes = [{
         "id": a.header.id, "kind": kind(a), "scope": a.header.scope,
         "subject": a.header.subject_id, "state": a.header.state,
@@ -35,11 +36,11 @@ def graph(artifacts: ArtifactStore, *, limit: int = 1000) -> dict:
     edges = {}
 
     def add(source: str, target: str, relation: str) -> None:
-        if source != target and source in visible and target in visible and len(edges) < 2000:
+        if source != target and source in visible and target in visible and len(edges) < edge_limit:
             key = (min(source, target), max(source, target), relation)
             edges[key] = {"source": source, "target": target, "kind": relation}
 
-    for edge in artifacts.edges_between([a.header.id for a in rows], 2000):
+    for edge in artifacts.edges_between([a.header.id for a in rows], edge_limit):
         add(edge.source, edge.target, "related")
     subjects, evidence = {}, {}
     for art in rows:

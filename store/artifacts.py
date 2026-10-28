@@ -65,9 +65,12 @@ class ArtifactRepository(SqliteRepository):
             )
 
     def count(self, family: str | None = None) -> int:
+        if family is None:
+            row = self.conn.execute("SELECT COUNT(*) AS c FROM nodes").fetchone()
+            return int(row["c"]) if row is not None else 0
         row = self.conn.execute(
-            "SELECT COUNT(*) AS c FROM nodes WHERE ? IS NULL OR family = ?",
-            (family, family),
+            "SELECT COUNT(*) AS c FROM nodes WHERE family = ?",
+            (family,),
         ).fetchone()
         return int(row["c"]) if row is not None else 0
 
@@ -189,8 +192,8 @@ class ArtifactRepository(SqliteRepository):
             )
 
     def list_recent(self, limit: int) -> list[Artifact]:
-        if not 1 <= limit <= 1000:
-            raise ValueError("recent artifact limit must be between 1 and 1000")
+        if not 1 <= limit <= 120:
+            raise ValueError("recent artifact limit must be between 1 and 120")
         # Limit headers before joining payload blobs; never decode the whole library.
         rows = self.conn.execute(
             "WITH recent AS (SELECT * FROM nodes ORDER BY updated_at DESC, id DESC LIMIT ?) "
@@ -202,7 +205,7 @@ class ArtifactRepository(SqliteRepository):
 
     def edges_between(self, node_ids: list[str], limit: int) -> list[ArtifactEdge]:
         ids = sorted(set(node_ids))
-        if len(ids) > 1000 or not 1 <= limit <= 2000:
+        if len(ids) > 120 or not 1 <= limit <= 240:
             raise ValueError("graph edge query exceeds snapshot bounds")
         if not ids:
             return []

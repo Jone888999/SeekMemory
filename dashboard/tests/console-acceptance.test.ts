@@ -35,14 +35,14 @@ void test("saving a blueprint generates valid unique IDs without secure-context 
   }
 })
 
-void test("1000-node mode retains the full snapshot and focus brings any node to the front", () => {
+void test("display limits remain capped at 120 and focus brings any selected node to the front", () => {
   const graph = loadGraph()
   assert.equal(recentGraph(graph, 80).nodes.length, 80)
   const full = recentGraph(graph, 1000)
-  assert.equal(full.nodes.length, 1000)
-  assert.equal(full.edges.length, graph.edges.length)
+  assert.equal(full.nodes.length, 120)
+  assert.equal(full.limit, 120)
   const sphere = layoutSphere(full)
-  assert.equal(sphere.stars.length, 1000)
+  assert.equal(sphere.stars.length, 120)
   for (const star of sphere.stars) {
     const projected = rotatePoint(star, focusOrbit(star))
     assert.ok(Math.abs(projected.x) < 1e-10)

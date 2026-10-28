@@ -18,7 +18,7 @@ open_store = importlib.import_module(f"{ROOT.name}.store").open_store
 graph = importlib.import_module(f"{ROOT.name}.services.console_projection").graph
 
 
-def measure(count: int, samples: int) -> dict:
+def measure(count: int, samples: int, limit: int = 120) -> dict:
     with tempfile.TemporaryDirectory(prefix="seekmemory-graph-bench-") as folder:
         store = open_store(str(Path(folder) / "memory.db"))
         try:
@@ -33,14 +33,14 @@ def measure(count: int, samples: int) -> dict:
             times = []
             for _ in range(samples):
                 started = time.perf_counter()
-                result = graph(store.artifacts)
+                result = graph(store.artifacts, limit=limit)
                 times.append((time.perf_counter() - started) * 1000)
             tracemalloc.start()
-            graph(store.artifacts)
+            graph(store.artifacts, limit=limit)
             _, peak = tracemalloc.get_traced_memory()
             tracemalloc.stop()
             return {
-                "artifacts": count, "storedEdges": count * 2,
+                "artifacts": count, "storedEdges": count * 2, "readLimit": limit,
                 "snapshotNodes": len(result["nodes"]), "snapshotEdges": len(result["edges"]),
                 "medianMs": statistics.median(times), "maxMs": max(times),
                 "peakPythonBytes": peak, "timesMs": times,
@@ -54,7 +54,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--nodes", type=int, default=10000)
     parser.add_argument("--samples", type=int, default=10)
+    parser.add_argument("--limit", type=int, choices=(40, 80, 120), default=120)
     args = parser.parse_args()
     if not 1000 <= args.nodes <= 100000 or not 1 <= args.samples <= 100:
         parser.error("nodes must be 1000..100000; samples must be 1..100")
-    print(json.dumps(measure(args.nodes, args.samples), indent=2))
+    print(json.dumps(measure(args.nodes, args.samples, args.limit), indent=2))

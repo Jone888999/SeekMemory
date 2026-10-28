@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import type { GraphSnapshot } from "../../shell/model.ts"
 import { assemblyDuration, entranceCamera } from "../choreography.ts"
-import { focusOrbit, type Orbit } from "../scene.ts"
-import { useSphere } from "./use-sphere.ts"
-// oxlint-disable-next-line import/default -- Vite supplies the virtual worker constructor.
-import LayoutWorker from "../layout.worker?worker&inline"
+import { focusOrbit, layoutSphere, type Orbit } from "../scene.ts"
 import { drawScene, scenePalette, type ScreenStar } from "../draw-scene.ts"
-// AstrBot serves entry scripts as blobs; inline the worker to avoid relative asset URLs.
-const createLayoutWorker = () => new LayoutWorker()
 export function useStarScene(
   graph: GraphSnapshot,
   kind: string,
@@ -24,10 +19,7 @@ export function useStarScene(
   const entrance = useRef(0)
   const dragging = useRef(false),
     invalidate = useRef(() => {})
-  const { sphere, pending, error, layoutMs } = useSphere(
-    graph,
-    createLayoutWorker
-  )
+  const sphere = useMemo(() => layoutSphere(graph), [graph])
   const relations = useMemo(
     (): [string, string][] =>
       graph.edges
@@ -43,7 +35,6 @@ export function useStarScene(
     paused,
     relations,
     replay,
-    layoutMs,
   })
   useEffect(() => {
     latest.current = {
@@ -54,10 +45,9 @@ export function useStarScene(
       paused,
       relations,
       replay,
-      layoutMs,
     }
     invalidate.current()
-  }, [sphere, kind, selected, hovered, paused, relations, replay, layoutMs])
+  }, [sphere, kind, selected, hovered, paused, relations, replay])
   // The canvas, observers and clock have one lifetime; pointer updates never resize/restart them.
   useEffect(() => {
     const element = canvas.current,
@@ -172,7 +162,6 @@ export function useStarScene(
         element.dataset["drawP95"] = p95(drawSamples).toFixed(2)
         element.dataset["frameP95"] = p95(frameSamples).toFixed(2)
         element.dataset["samples"] = String(drawSamples.length)
-        element.dataset["layoutMs"] = state.layoutMs.toFixed(2)
         element.dataset["intro"] = intro.toFixed(0)
         element.dataset["stage"] =
           ["seed", "trunk", "branches", "pullback", "ready"][
@@ -328,7 +317,5 @@ export function useStarScene(
     setDragging,
     tooltip,
     leader,
-    pending,
-    error,
   }
 }

@@ -26,10 +26,10 @@ export function MemoryMap({
   initialNode: string
   onInspect: (id: string) => void
 }) {
+  const [limit, setLimit] = useState(80)
   const read = useCallback(() => client.graph(), [client])
   const vm = useResource(read)
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [limit, setLimit] = useState(80)
   const [layer, setLayer] = useState("")
   const [query, setQuery] = useState(initialNode),
     [kind, setKind] = useState("all"),

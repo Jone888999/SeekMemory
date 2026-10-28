@@ -36,11 +36,12 @@ current animated, perspective-projected memory sphere.
 ## Measure the current sphere
 
 Start the dashboard in Mock mode, select the long pressure fixture, then open
-Memory and choose 1,000 recent memories. The default remains 80. Layouts above
-120 nodes run in a Worker. Keep the tab visible, let the entrance finish, and
+Memory and choose 40, 80 or 120 recent memories. The backend loads at most 120
+nodes once; display defaults to 80 and switching is local. Keep the tab visible,
+let the entrance finish, and
 read the canvas `data-*` attributes using browser developer tools:
 
-- `nodes`, `layout-ms`: displayed nodes and the last Worker calculation duration.
+- `nodes`: displayed nodes.
 - `draw-p95`, `draw-ms`: CPU drawing submission, excluding GPU completion.
 - `frame-p95`, `frame-ms`: animation callback intervals, not drawing duration.
 - `samples`: rolling window of up to 120 paints.
@@ -51,16 +52,16 @@ foregrounded. Reload before comparing scenarios so the rolling samples do not
 mix conditions. Inspect input response during layout, keyboard selection via
 Find memory, focus/neighbourhood controls, pause, reduced motion and touch on
 supported devices. All instrumentation is development-only and removed by Vite.
-The production build must also load its Worker inside the authenticated host.
+Verify the production build inside the authenticated host as well.
 
 For the real SQLite graph projection, run:
 
 ```sh
-python scripts/benchmark_console.py --nodes 10000 --samples 10
+python scripts/benchmark_console.py --nodes 10000 --samples 10 --limit 120
 ```
 
-This creates a disposable synthetic database, reads the latest 1,000 nodes and
-at most 2,000 edges, and reports duration and Python allocation. It excludes host
+This creates a disposable synthetic database, reads the latest 120 nodes and
+at most 240 edges, and reports duration and Python allocation. It excludes host
 HTTP, serialization and browser work. The repository bounds materialization and
 batches edge reads, but adds no index; sorting a larger library still needs
 measurement. Keep actual measurements and acceptance gaps in the PR. Neither a

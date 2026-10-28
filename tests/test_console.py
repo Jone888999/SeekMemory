@@ -65,15 +65,18 @@ class ConsoleTest(unittest.TestCase):
             self.store.artifacts.upsert(art)
         self.store.artifacts.add_edge('item-1004', 'item-1003', 'related', 1)
         self.store.artifacts.add_edge('item-1004', old.header.id, 'related', 1)
-        with patch.object(self.store.artifacts, 'list', side_effect=AssertionError('unbounded read')), \
-             patch.object(self.store.artifacts, 'edges_of', side_effect=AssertionError('per-node query')):
-            result = self.service.graph()
-        self.assertEqual(result['total'], 1006)
-        self.assertEqual(len(result['nodes']), 1000)
-        self.assertEqual(result['nodes'][0]['id'], 'item-1004')
-        self.assertEqual(result['nodes'][-1]['id'], 'item-0005')
-        self.assertEqual(result['edges'], [{'source': 'item-1004', 'target': 'item-1003', 'kind': 'related'}])
-        self.assertEqual(self.store.artifacts.edges_between([], 2000), [])
+        for limit in (40, 80, 120):
+            with self.subTest(limit=limit), \
+                 patch.object(self.store.artifacts, 'list', side_effect=AssertionError('unbounded read')), \
+                 patch.object(self.store.artifacts, 'edges_of', side_effect=AssertionError('per-node query')):
+                result = self.service.graph(limit=limit)
+                self.assertEqual(result['total'], 1006)
+                self.assertEqual(result['limit'], limit)
+                self.assertEqual(len(result['nodes']), limit)
+                self.assertEqual(result['nodes'][0]['id'], 'item-1004')
+                self.assertEqual(result['nodes'][-1]['id'], f'item-{1005-limit:04d}')
+                self.assertEqual(result['edges'], [{'source': 'item-1004', 'target': 'item-1003', 'kind': 'related'}])
+        self.assertEqual(self.store.artifacts.edges_between([], 240), [])
         self.assertEqual(len(self.store.artifacts.edges_between(['item-1004', 'item-1003', old.header.id], 1)), 1)
 
     def test_dream_projection_excludes_error_bodies(self):
@@ -154,8 +157,8 @@ class ConsoleTest(unittest.TestCase):
         for index in range(1005):
             self.seed('memory', {'level':'fact', 'text':f'entry {index}'}, subject_id='same')
         result=self.service.graph()
-        self.assertEqual(len(result['nodes']),1000)
-        self.assertLessEqual(len(result['edges']),2000)
+        self.assertEqual(len(result['nodes']),120)
+        self.assertLessEqual(len(result['edges']),240)
         self.assertEqual(result['total'],1005)
         self.assertTrue(all(e['source']!=e['target'] for e in result['edges']))
 

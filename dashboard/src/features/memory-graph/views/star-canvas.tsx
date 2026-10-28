@@ -41,8 +41,6 @@ export function StarCanvas({
     setDragging,
     tooltip,
     leader,
-    pending,
-    error,
   } = useStarScene(graph, foreground, selected, visibleHovered, paused, replay)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const drag = useRef({ id: "", distance: 0 })
@@ -73,22 +71,6 @@ export function StarCanvas({
   }
   return (
     <div className="star-canvas">
-      {pending && (
-        <p
-          role="status"
-          className="absolute top-4 left-4 text-sm text-muted-foreground"
-        >
-          正在布局记忆…
-        </p>
-      )}
-      {error && (
-        <p
-          role="alert"
-          className="absolute top-4 left-4 text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
       <canvas
         ref={canvas}
         tabIndex={0}

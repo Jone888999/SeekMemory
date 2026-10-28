@@ -166,7 +166,7 @@ export interface paths {
         };
         /**
          * 控制台 graph
-         * @description 固定的最近更新快照，最多 1000 个节点和 2000 条关联；不接收 limit 参数。前端筛选及 40/80/120/1000 的显示上限仅作用于该快照，total 为数据库中 Artifact 总数。
+         * @description 固定读取最近更新的最多 120 个节点及 240 条关联，不接收 limit 参数。前端默认显示 80 条，可选 40/80/120，切换数量和筛选仅作用于这批记忆，不重新请求。total 为数据库中 Artifact 总数。
          */
         get: operations["graph"];
         put?: never;
