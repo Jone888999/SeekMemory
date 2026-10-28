@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/readme-future-vision.jpg" alt="SeekMemory 多平台未来愿景：8 个入口，1 颗大脑，1 份人格" width="100%">
+  <img src="docs/assets/readme-future-vision-v2.png" alt="SeekMemory 多平台未来愿景：8 个入口，1 颗大脑，1 份人格" width="100%">
 </p>
 
 <p align="center">
@@ -223,7 +223,7 @@ Dream 负责长期整理。
 ## 多平台管理：入口可以不同，她只能有一个
 
 <p align="center">
-  <img src="docs/assets/readme-future-vision.jpg" alt="SeekMemory 多平台入口愿景" width="100%">
+  <img src="docs/assets/readme-future-vision-v2.png" alt="SeekMemory 多平台入口愿景" width="100%">
 </p>
 
 多平台管理包含的不只是“接线”。
