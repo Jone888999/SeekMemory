@@ -88,7 +88,12 @@ class RelationshipInteractionPolicy:
             return InteractionGate(reason="relationship_off")
         snapshot = self.reader.get(event.speaker_id)
         must_reply = decision.must_reply
-        if event.question or event.addressed or event.reply_to_me:
+        if event.private:
+            # A private message is not automatically a direct question.
+            must_reply = bool(event.question or event.addressed or event.reply_to_me)
+        elif event.question or event.addressed or event.reply_to_me:
+            # Explicit questions and host direct signals must not be muted by
+            # relationship state, including in group conversations.
             must_reply = True
         return decide_interaction(
             snapshot,

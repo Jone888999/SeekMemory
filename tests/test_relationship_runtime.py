@@ -216,7 +216,7 @@ class RelationshipAdapterPolicyTest(unittest.TestCase):
             source_id="source-1",
         )
         direct = policy.decide(
-            RuntimeInput("p3", "hello", "u1", private=True, mentioned=True),
+            RuntimeInput("p3", "hello", "u1", private=True, addressed=True),
             runtime_private,
             source_id="source-1",
         )
