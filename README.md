@@ -136,11 +136,11 @@ AgentRuntime 负责这一轮怎么活。
 Memory Kernel 负责她为什么还是她。
 
 <p align="center">
-  <img src="docs/assets/readme-agent-runtime.jpg" alt="AgentRuntime 多平台运行架构" width="100%">
+  <img src="docs/assets/v3-runtime-interruption-premium.png" alt="AgentRuntime V3 平台抽象与中断架构" width="100%">
 </p>
 
 <p align="center">
-  <sub>QQ、微信、B 站等平台是同级入口，统一经过 AgentRuntime 后再进入记忆内核。</sub>
+  <sub>平台只是入口；RunControl 以 session 为边界，同会话替换旧 run，跨会话互不抢占。</sub>
 </p>
 
 ### 一条消息的完整生命周期
@@ -166,11 +166,11 @@ Memory Kernel 负责她为什么还是她。
 ## Memory Kernel：不是记忆库，是连续性内核
 
 <p align="center">
-  <img src="docs/assets/readme-memory-architecture.jpg" alt="SeekMemory 记忆架构：AgentRuntime、Memory Kernel、Recall 与 Dream" width="100%">
+  <img src="docs/assets/v3-memory-algorithm-premium.png" alt="SeekMemory V3 记忆内核与算法因子架构" width="100%">
 </p>
 
 <p align="center">
-  <sub>Source 是不可变事实，Artifact 是可修订解释；召回、Dream 与人格链共同构成记忆内核。</sub>
+  <sub>Source 是不可变证据，Artifact 是可修订解释；强度、排序、证据闸门、披露与预算共同决定召回。</sub>
 </p>
 
 记忆内核主要做三件事：
@@ -209,6 +209,14 @@ Dream 负责长期整理。
 这不是删除记忆。
 
 而是把经历慢慢炼成理解，并让理解影响人格。
+
+<p align="center">
+  <img src="docs/assets/v3-dream-persona-architecture-premium.png" alt="SeekMemory V3 梦境架构、人格链与记忆强化" width="100%">
+</p>
+
+<p align="center">
+  <sub>Dream 把 Source 变成 Artifact：分类、强化、合并、遗忘、修订，再进入人格链的长期演进。</sub>
+</p>
 
 ---
 
