@@ -1,6 +1,6 @@
 # 变更记录
 
-## Unreleased
+## 0.5.0 — 2026-10-28
 
 ### 中文
 
@@ -10,7 +10,6 @@
 - 扩展 `runtime_episodes` 保存无正文的动作尝试与终态；重复回调幂等，每个 action 最多保留一个终态，并沿用现有保留清理。
 - 新增 `AgentRuntime.schedule_proactive()` 和 AstrBot `proactive_idle_seconds` 排期入口；主动策略从纯策略接到真实 worker。宿主发送动作也进入 action ledger，成功/失败均形成无正文终态。
 - 将 AgentRuntime 默认注意力收敛为单一 `DefaultAttentionPolicy`：主人/私聊/直接提及回复，非主人直接提及后按说话人保留 3 轮后续回复；移除默认路径中的额度、preset、阈值、关系/热度信号和场景提示，策略结果只通过 `AttentionDecision` 向 Runtime 返回通用状态补丁。
-
 - 收口 Runtime action 链路：新增 `ActionExecutor` 统一 attempt/terminal 与 `ActionPort` 执行，`ActionMessageSender` 仅作为 `SEND_TEXT` 兼容适配器；AstrBot 发送/工具审计统一走 ActionExecutor，不再直接操作 ledger。
 
 ### English
