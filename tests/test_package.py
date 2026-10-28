@@ -51,6 +51,7 @@ class PackageTests(unittest.TestCase):
                 target = self.root / source.relative_to(ROOT)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
+        shutil.copytree(ROOT / "persona_seeds", self.root / "persona_seeds")
         self.view = self.root / "pages/memory"
         (self.view / "assets").mkdir(parents=True)
         (self.view / "index.html").write_text(
@@ -98,6 +99,9 @@ class PackageTests(unittest.TestCase):
             names = set(bundle.namelist())
             self.assertTrue(
                 {
+                    "persona_seeds/index.json",
+                    "persona_seeds/big_fish/persona.json",
+                    "persona_seeds/big_fish/LICENSE",
                     "main.py",
                     "app/checkpoint.py",
                     "app/contracts.py",
@@ -135,6 +139,20 @@ class PackageTests(unittest.TestCase):
             (self.output / "SHA256SUMS").read_text(encoding="utf-8"),
             f"{hashlib.sha256(first).hexdigest()}  {archive.name}\n",
         )
+
+    def test_persona_assets_reject_missing_license_symlinks_and_oversize(self):
+        license_path = self.root / "persona_seeds/big_fish/LICENSE"
+        original = license_path.read_bytes()
+        license_path.unlink()
+        with self.assertRaises(ValueError): package_plugin(self.root, self.output)
+        license_path.symlink_to(ROOT / "LICENSE-MIT")
+        with self.assertRaises(ValueError): package_plugin(self.root, self.output)
+        license_path.unlink()
+        license_path.write_bytes(b"x" * 65537)
+        with self.assertRaises(ValueError): package_plugin(self.root, self.output)
+        license_path.write_bytes(original)
+        (self.root / "persona_seeds/index.json").write_text('["../escape"]')
+        with self.assertRaises(ValueError): package_plugin(self.root, self.output)
 
     def test_missing_runtime_resource_fails(self) -> None:
         """SQL 表结构缺失时不生成 ZIP。"""

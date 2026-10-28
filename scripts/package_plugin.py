@@ -85,6 +85,11 @@ def package_plugin(root: Path, output: Path, tag: str = "") -> Path:
             and Path(name).suffix == ".py"
         )
     }
+    if __package__:
+        from .package_seeds import seed_files
+    else:
+        from package_seeds import seed_files
+    files.update(seed_files(root, set(tracked)))
     required = RUNTIME_FILES | {f"{name}/__init__.py" for name in RUNTIME_PACKAGES}
     if missing := required - files:
         raise ValueError(f"必要运行文件未被 Git 跟踪： {sorted(missing)}")

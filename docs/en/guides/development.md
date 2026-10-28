@@ -71,3 +71,19 @@ check includes generated-type freshness, TypeScript, lint, frontend tests, and f
 - When event flow, service composition, or a host boundary changes, update the overview and related module page.
 - Documentation should describe behavior confirmed by current code. Work plans and review history belong in GitHub Issues/PRs, not local RFC or per-work records in docs.
 - Chinese and English pages are mirrored under docs/zh and docs/en; site navigation lives in mkdocs.yml, and scripts/check_docs_structure.py validates the page structure.
+
+## Persona console preview and packs
+
+The Mock console uses hash routes such as #/home, #/studio, #/memory,
+#/store, #/dream and #/system?section=traces. The preview selector includes
+loading, empty, error and a 1,000-node/2,000-edge stress fixture. Preview
+install/import/edit actions affect memory-only fixtures. dev:host and production
+builds require the authenticated AstrBot page bridge.
+
+Bundled persona files live at persona_seeds/&lt;id&gt;/persona.json. Add the ID to
+index.json, include a LICENSE and follow the [persona seed guide](persona-seed.md).
+Local imports go under the plugin data directory's persona_packs/. Removal moves
+a pack to .trash and leaves the active persona unchanged. Recover a removed
+blueprint by importing its backup JSON after checking the ID and version.
+To replace a same-ID file, supply its current version during import confirmation.
+Updating a blueprint never installs it automatically.

@@ -128,6 +128,8 @@ class WebRoutes:
                     "open_to",
                     "observe_groups",
                     "summary_time",
+                    "dream_time",
+                    "dream_enabled",
                     "weekly_day",
                     "idle_flush_seconds",
                     "checkpoint_seconds",
@@ -162,8 +164,8 @@ class WebRoutes:
         plugin = self.plugin
         if not request.username:
             return error_response("需要管理员登录", status_code=401)
-        read_actions = {"status", "records", "detail", "events", "traces"}
-        write_actions = {"update", "rollbackPersona", "diagnose", "task", "cancel"}
+        read_actions = {"status", "records", "detail", "events", "traces", "graph", "impressions", "dream", "packs", "pack"}
+        write_actions = {"update", "rollbackPersona", "diagnose", "task", "cancel", "persona"}
         if action not in read_actions | write_actions:
             return error_response("未知操作", status_code=404)
         if request.method != ("GET" if action in read_actions else "POST"):
@@ -198,6 +200,16 @@ class WebRoutes:
                     "记忆引擎不可用，请检查运行检测与日志", status_code=503
                 )
             service = plugin.services.management_service
+            if action == "graph":
+                return json_response(service.graph())
+            if action == "impressions":
+                return json_response(service.impressions(offset=int(request.query.get("offset", "0"))))
+            if action == "dream":
+                return json_response(service.dream_journal())
+            if action == "packs":
+                return json_response(service.pack_catalog(request.query.get("collection", "official"), int(request.query.get("offset", "0"))))
+            if action == "pack":
+                return json_response(service.pack_detail(request.query.get("reference", "")))
             if action == "records":
                 return json_response({"records": service.catalog()})
             if action == "detail":
@@ -207,6 +219,12 @@ class WebRoutes:
             body = await request.json()
             if not isinstance(body, dict):
                 raise ValueError("请求体必须为 JSON 对象")
+            if action == "persona":
+                if plugin.jobs.task is not None and not plugin.jobs.task.done():
+                    return error_response("维护任务运行中，请稍后操作", status_code=409)
+                result = service.persona_action(body)
+                plugin.journal.record("persona", "succeeded", "人格包操作已完成")
+                return json_response(result)
             if action == "diagnose":
                 with plugin.journal.span("diagnose", "recall.preview") as metrics:
                     result = service.diagnose(body)
@@ -254,6 +272,8 @@ class WebRoutes:
         except LookupError:
             return error_response("记忆不存在，请刷新列表", status_code=404)
         except ValueError as exc:
+            if str(exc) == "pack_changed":
+                return error_response("人格包内容已更新，请重新打开预览后确认安装", status_code=409)
             if str(exc) == "revision_conflict":
                 return error_response(
                     "记忆已被修改，请重新加载后再保存", status_code=409

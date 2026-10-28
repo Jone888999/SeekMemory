@@ -1,5 +1,79 @@
 # 变更记录
 
+## Unreleased
+
+### 中文
+
+- 星图每次加载最多读取 120 条记忆和 240 条关联，默认显示 80 条，40/80/120 切换不再请求；移除千节点选项与后台布局，避免预读过多记忆。
+
+- 将星图读取改为数据库限量快照与批量关联查询；补齐抽屉中的键盘列表、聚焦和关联视图，修复普通 HTTP 页面保存人格包的随机 ID 兼容性。保持数据库格式与公开配置不变。
+
+- 兼容 v0.5.0 的 AstrBot 包结构，修正内置人格包路径，保留上游动作审计及自动测试发现机制；验证人格包、Dream 历史及重启恢复。无额外数据库或配置变更。
+
+- 同步 v0.4.3 后的宿主运行时，保留人格包与 Dream 控制台接线；补齐重载及启动失败重试验证，将控制台文档迁入中英双语目录，日志增加“允许回复／本轮不回复”状态筛选。无新增数据库或配置变更。
+
+- 按界面反馈移除星图数量提示、关联筛选入口、底部键盘列表及重复详情按钮；浮动卡片的详情按钮跟随记忆点配色，明黄、淡绿使用深色文字。
+
+- 修复星图入场计时停止后亮面残留：高亮在入场结束前淡出，常态只随波纹短暂亮起；将土黄、橄榄黄绿调整为明黄、淡绿，并统一明暗主题。
+
+- 收紧星图节点光晕，改用单路接力的淡色连线脉冲，无亮头或拖尾；入场沿球面由左向右分支扩散，镜头稍滞后于前沿，在 6.6 秒内逆时针环绕一整圈，同步拉远并居中，避免末尾额外平移，支持中途接管视角与减少动态效果。
+
+- 星图改用高对比发光节点，面片只随波纹或入场短暂亮起；默认显示最近更新 80 条（可选 40/80/120），随数量放大默认半径，进入/刷新时播放点→线→面→体动画。点击横幅展开既有详情接口返回的正文与元信息，保留受保护内容遮蔽并丢弃过期请求。
+
+- 记忆星图改为可旋转的立体记忆球，支持同类分组、分类配色、呼吸/波纹/流光、悬停凸起及信息框、点击固定与缩放；球面网格与真实关联区分呈现，修复交互时重建画布造成的闪动，筛选收进抽屉；生命周期日志改为只读控制台，支持定时刷新、暂停更新、自动跟随及展开详情，保留既有筛选与脱敏接口。
+
+- 根据 DeepSeek 首页与 Harness 实际页面调整明暗主题：浅蓝白底与淡网格、石墨黑底与柔和蓝光；侧栏、面板和抽屉加入适量磨砂玻璃层次，补齐页面进入、侧栏折叠与悬停动效，并适配减少动态效果偏好。
+
+- 记忆筛选收拢为单一入口，提供带解释的类型/范围选项、明确的记忆条数和可逐个取消的条件标签；修复侧栏收起后文字溢出及预览页底部按钮超出视口。
+
+- 记忆库改为单栏列表：统计收拢为摘要，集中类型/状态/范围/会话筛选并支持统一重置，详情改为点击后打开抽屉。
+
+- 记忆库移除重复的独立侧栏，将类型及数量合并至列表筛选，统一桌面与窄屏入口。
+
+- 首页采用居中人格展示与下方运行/成长分栏，调整标题、胶囊按钮与留白；按用户提供的画风和人设参考生成透明 Q 版头像，替换首页与小铺的鱼插画。
+
+- 管理面板统一蓝白黑配色，图表与深色模式共用主题；移除装饰英文、重复说明与页脚标语，以留白和标题层级组织内容。
+
+- 控制台改用分组式左侧导航，支持桌面折叠和窄屏图标栏，连接状态与刷新移至侧栏底部。
+
+- 人格控制台接入历史版本回滚、差异比较与变化原因；安装时校验预览内容，按版本显示已安装状态；Dream 日志区分预算停止与完成，并显示调度开关。新增控制台接口需与 dashboard 同步更新，不涉及数据库迁移或配置变化（#82 / #83）。
+
+### English
+
+- Read at most 120 graph nodes and 240 associations on load, display 80 nodes by default, and switch between 40/80/120 locally. Remove the 1,000-node option and background layout to avoid excessive prefetching.
+
+- Bound graph reads in SQL and batch association queries; add a drawer-based keyboard list, focus and neighborhood actions, HTTP-compatible random persona-pack IDs. Database formats and public configuration are unchanged.
+
+- Integrate the v0.5.0 AstrBot package layout, correct the built-in persona-pack path, and retain upstream action auditing and automatic test discovery. Verify persona packs, Dream history and restart recovery without additional database or configuration changes.
+
+- Integrate the post-v0.4.3 host runtime while retaining persona-pack and Dream console wiring. Verify reload and failed-start retry, move console documentation into the bilingual tree, and expose allow-reply/skip-reply log filters. No additional database or configuration changes.
+
+- Remove the graph count, relation filter, bottom keyboard list and duplicate detail action. Match floating-card detail buttons to their memory node colors with dark text on bright yellow and light green.
+
+- Fade memory-sphere assembly highlights before the entrance clock stops, preventing permanently lit facets while retaining transient ripple illumination. Replace ochre and olive tones with clear yellow and light green in both themes.
+
+- Tighten node halos and replace travelling heads/tails with one muted, continuous edge-pulse relay. Sweep the entrance left to right along branching mesh paths while the camera trails the frontier through exactly one counterclockwise turn in 6.6 seconds, pulling back and centering continuously without a separate final translation; support interaction takeover and reduced motion.
+
+- Use higher-contrast luminous nodes and transient ripple/assembly facets. Show the 80 most recently updated memories by default (40/80/120 choices), scale the default radius with density, and assemble points → lines → faces → volume on entry/refresh. Expand annotations on selection using the existing detail API, retaining protected-content masking and discarding stale replies.
+
+- Rework the memory map into a rotatable 3D memory sphere with category patches, muted colors, breathing/ripple/flow motion, raised hover nodes, annotations, pinned selection and zoom. Distinguish surface geometry from real relationships and avoid canvas recreation during interaction; move filters into a drawer. Present lifecycle logs as a read-only console with polling, pause, follow-latest and expandable details, retaining existing filters and sanitized APIs.
+
+- Adapt light/dark themes from the live DeepSeek and Harness pages: icy-blue backgrounds and a faint grid, graphite surfaces and soft blue light. Add restrained frosted navigation, panels and drawers, plus page-entry, sidebar and hover motion with reduced-motion support.
+
+- Consolidate memory filters into one entry with explained type/scope choices, explicit record counts and removable filter chips; fix collapsed sidebar text overflow and off-screen preview footer controls.
+
+- Simplify the memory library to a single list with inline statistics, unified category/state/scope/session filters and reset, and on-demand detail drawers.
+
+- Remove the duplicate memory-library sidebar and move category counts into the list filter, shared across desktop and narrow layouts.
+
+- Recompose the home page around a centered persona and separate activity/history columns, with lighter headings, pill buttons and more whitespace; replace the home/store fish with a transparent chibi head generated from user-supplied style and character references.
+
+- Unify the dashboard around blue, white and neutral black, including charts and dark mode; remove decorative labels, repeated introductions and footer slogans in favor of spacing and clear headings.
+
+- Replace console top navigation with a grouped left sidebar, desktop collapse and a compact icon rail on narrow screens; move connection status and refresh to its footer.
+
+- Connect persona rollback with version diffs and change reasons; validate previewed pack content before installation and show installed versions accurately. Dream distinguishes budget stops from completion and reports scheduling state. Ship the new console API and dashboard together; no database migration or configuration change (#82 / #83).
+
 ## 0.5.0 — 2026-10-28
 
 ### 中文

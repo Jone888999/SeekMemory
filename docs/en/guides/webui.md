@@ -31,3 +31,12 @@ The lifecycle log helps locate business stages, durations, source locations, and
 Capacity Trace is a separate runtime sample. These streams have different purposes and are not interchangeable as business facts.
 
 See [development setup](development.md) for the dashboard mock and build workflow.
+
+## Persona console and memory map
+
+The sidebar groups home, persona studio, memories, impressions, persona packs and Dream. Run traces have a single entry under System.
+The studio compares historical revisions and requires a reason and confirmation before rollback. The store separates bundled seeds from local blueprints; installing creates a new active-persona revision without creating Sources or calling a model. Exporting the current persona retains only blueprint allowlisted fields, excluding raw dialogue, source evidence, ledger and revision history. Import and update only save files; installation requires a separate confirmation.
+
+The memory map uses Canvas perspective projection. It filters first, then displays the 80 most recently updated memories, with 40/80/120 choices. The surface mesh is decorative geometry, not semantic evidence; dashed links on selection represent associations supplied by the API. Drag to rotate, zoom, hover to preview and select to expand. Motion respects reduced-motion preferences. Protected nodes stay masked until an explicit protected-detail action.
+
+Lifecycle logs refresh every three seconds and support pause, follow-latest and expandable details. Attention log states allow-reply and skip-reply indicate whether policy allowed or blocked this turn, not whether a message was delivered. Both states are available under More filters.

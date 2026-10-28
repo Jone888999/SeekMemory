@@ -66,6 +66,7 @@ from .hooks import AstrBotHooks
 from .runtime import AstrBotRuntimeAdapter
 from .time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
 from .topics import AstrBotTopicSource
+from ..persona_packs import FilePersonaPacks
 
 class AstrBotPlugin(star.Star):
     """Composition root and lifecycle owner for the AstrBot host.
@@ -173,6 +174,9 @@ class AstrBotPlugin(star.Star):
             ledger=self.store.ledger if self.store is not None else None,
             cache=self.cache,
             recall_service=recall,
+            packs=FilePersonaPacks(Path(__file__).resolve().parents[2] / "persona_seeds",
+                                   self.data_path.parent / "persona_packs"),
+            dreams=self.store.dreams if self.store is not None else None,
         )
         if self.store is not None:
             state_store = RepoStateStore(self.store.runtime_state)

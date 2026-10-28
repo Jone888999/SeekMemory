@@ -1,3 +1,5 @@
+import { z } from "zod"
+import { mockConsole } from "./mock-console.ts"
 import {
   memoryCollectionSchema,
   type MemoryRecord,
@@ -149,6 +151,9 @@ for (const record of records) {
           : [],
     })
   )
+}
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : ""
 }
 const personaText = "你先回应情绪，再讨论问题。"
 const personaText2 = personaText + "你承认不确定，不编造答案。"
@@ -355,6 +360,7 @@ let events: OperationEvent[] = [
   .sort((a, b) => b.at.localeCompare(a.at))
 
 export const mockClient: ManagementClient = {
+  console: mockConsole(() => records, details),
   async traces() {
     return demoTraces(base.id)
   },
@@ -411,8 +417,17 @@ export const mockClient: ManagementClient = {
       },
       persona: {
         id: "n_persona_mock",
-        revision: 2,
-        text: "你先回应情绪，再讨论问题。你承认不确定，不编造答案。",
+        seedId: stringValue(
+          details.get("n_persona_mock")?.artifact.payload["seed_id"]
+        ),
+        seedVersion: stringValue(
+          details.get("n_persona_mock")?.artifact.payload["seed_version"]
+        ),
+        revision: details.get("n_persona_mock")?.artifact.header.revision ?? 2,
+        text: stringValue(
+          details.get("n_persona_mock")?.artifact.payload["text"] ??
+            personaText2
+        ),
         revisions: [
           {
             revision: 1,
@@ -435,6 +450,21 @@ export const mockClient: ManagementClient = {
               "demo-assistant-2",
             ],
           },
+          ...[...(details.get("n_persona_mock")?.versions ?? [])]
+            .filter((v) => Number(v["revision"]) > 2)
+            .map((v) => ({
+              revision: Number(v["revision"]),
+              at: stringValue(v["at"]),
+              op: "revise",
+              text: stringValue(
+                z
+                  .object({ text: z.string() })
+                  .parse(JSON.parse(stringValue(v["content"]) || "{}")).text
+              ),
+              changeReason: stringValue(v["reason"]),
+              derivedFrom: [],
+              sourceIds: [],
+            })),
         ],
       },
       checkpointPending: 2,
@@ -442,6 +472,8 @@ export const mockClient: ManagementClient = {
       config: {
         owner_umo: "napcat:FriendMessage:10001",
         observe_groups: true,
+        dream_enabled: true,
+        dream_time: "03:30",
         summary_time: "23:50",
         weekly_day: 6,
         checkpoint_seconds: 1800,

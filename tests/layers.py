@@ -15,7 +15,7 @@ INTEGRATION_MARKERS = (
     "e2e", "absorb", "attention", "astrbot", "continuity", "dream_eval",
     "failure", "group", "privacy", "identity", "lineage", "migration",
     "kernel", "recall", "self_impression", "reinforcement", "run_recorder",
-    "runtime_", "temporal", "webui",
+    "runtime_", "temporal", "webui", "console",
 )
 
 
