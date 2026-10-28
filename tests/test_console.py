@@ -56,6 +56,26 @@ class ConsoleTest(unittest.TestCase):
         self.assertNotIn('PRIVATE_SENTINEL', shadow['summary'])
         with self.assertRaises(ValueError): self.service.impressions(offset=-1)
 
+    def test_graph_reads_recent_snapshot_without_full_library_or_per_node_edges(self):
+        from dataclasses import replace
+        old = self.seed('memory', {'text': 'old', 'level': 'fact'}, id='old')
+        for i in range(1005):
+            art = module('core.artifact').make('memory', {'text': f'item-{i}', 'level': 'fact'}, id=f'item-{i:04d}')
+            art = replace(art, header=replace(art.header, time=replace(art.header.time, updated='2099-01-01T00:00:00Z')))
+            self.store.artifacts.upsert(art)
+        self.store.artifacts.add_edge('item-1004', 'item-1003', 'related', 1)
+        self.store.artifacts.add_edge('item-1004', old.header.id, 'related', 1)
+        with patch.object(self.store.artifacts, 'list', side_effect=AssertionError('unbounded read')), \
+             patch.object(self.store.artifacts, 'edges_of', side_effect=AssertionError('per-node query')):
+            result = self.service.graph()
+        self.assertEqual(result['total'], 1006)
+        self.assertEqual(len(result['nodes']), 1000)
+        self.assertEqual(result['nodes'][0]['id'], 'item-1004')
+        self.assertEqual(result['nodes'][-1]['id'], 'item-0005')
+        self.assertEqual(result['edges'], [{'source': 'item-1004', 'target': 'item-1003', 'kind': 'related'}])
+        self.assertEqual(self.store.artifacts.edges_between([], 2000), [])
+        self.assertEqual(len(self.store.artifacts.edges_between(['item-1004', 'item-1003', old.header.id], 1)), 1)
+
     def test_dream_projection_excludes_error_bodies(self):
         self.store.dreams.begin('2026-10-25')
         self.store.dreams.finish('2026-10-25', status='failed', errors=['PRIVATE_SENTINEL'], summary={'usage':{'calls':2,'in':100,'out':20}, 'raw':'PRIVATE_SENTINEL'})

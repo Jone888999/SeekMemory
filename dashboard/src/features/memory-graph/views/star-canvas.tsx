@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Button } from "@/ui"
-import { Minus, Plus, RotateCcw, Pause, Play } from "lucide-react"
+import { Focus, Minus, Plus, RotateCcw, Pause, Play } from "lucide-react"
 import type { GraphSnapshot } from "@/features/shell/model"
 import { kindColors, kindLabels } from "../model"
 import { hitStar } from "../draw-scene"
@@ -37,9 +37,12 @@ export function StarCanvas({
     zoom,
     rotate,
     resetOrbit,
+    focusNode,
     setDragging,
     tooltip,
     leader,
+    pending,
+    error,
   } = useStarScene(graph, foreground, selected, visibleHovered, paused, replay)
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const drag = useRef({ id: "", distance: 0 })
@@ -70,6 +73,22 @@ export function StarCanvas({
   }
   return (
     <div className="star-canvas">
+      {pending && (
+        <p
+          role="status"
+          className="absolute top-4 left-4 text-sm text-muted-foreground"
+        >
+          正在布局记忆…
+        </p>
+      )}
+      {error && (
+        <p
+          role="alert"
+          className="absolute top-4 left-4 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
       <canvas
         ref={canvas}
         tabIndex={0}
@@ -198,6 +217,16 @@ export function StarCanvas({
         </div>
       )}
       <div className="star-controls">
+        {selected && (
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="聚焦选中记忆"
+            onClick={() => focusNode(selected)}
+          >
+            <Focus />
+          </Button>
+        )}
         <Button
           variant="outline"
           size="icon"

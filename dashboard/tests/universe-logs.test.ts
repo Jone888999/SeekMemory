@@ -206,7 +206,7 @@ void test("recent graph shows the newest bounded memories, preserves masking and
   assert.ok(
     result.edges.every((edge) => ids.has(edge.source) && ids.has(edge.target))
   )
-  assert.equal(recentGraph(graph, 1000).nodes.length, 120)
+  assert.equal(recentGraph(graph, 1000).nodes.length, 1000)
   assert.equal(JSON.stringify(graph), before)
   const first = graph.nodes[0]
   assert.ok(first)

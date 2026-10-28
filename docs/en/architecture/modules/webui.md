@@ -54,3 +54,11 @@ creates a new revision and records the reason in the ledger; history is preserve
 The route is now declared in OpenAPI and validated by the production client.
 Dream renders `budget.stopped` and `dream_enabled` explicitly, rather than treating
 a budget-limited run as full completion or disabled scheduling as active.
+
+## Graph snapshot and interaction
+
+`manage/graph` returns a fixed snapshot of at most 1,000 recently updated nodes and 2,000 associations. It does not accept a `limit` query parameter. The repository orders and limits nodes in SQL before loading associations inside that snapshot; it no longer decodes every Artifact or queries edges per node. A count query supplies `total`. No database index is added: very large libraries still incur a sorting scan and require measurement at representative scale.
+
+Search and kind/time/scope/subject filters operate only on this snapshot. Rendering defaults to the latest 80 nodes, with 40/80/120/1000 options; layouts above 120 nodes run in a Worker. The sphere mesh is decorative; selected associations and neighborhood isolation use real graph edges. The search drawer provides a keyboard list paginated at 30 rows, followed by focus, detail and audit actions. Reduced motion skips the entrance and continuous animations; a pause control also stops motion.
+
+Saving a persona blueprint uses `crypto.getRandomValues` for random IDs on ordinary HTTP pages, without requiring secure-context `crypto.randomUUID`. Host login and API authentication remain required.

@@ -164,7 +164,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 控制台 graph */
+        /**
+         * 控制台 graph
+         * @description 固定的最近更新快照，最多 1000 个节点和 2000 条关联；不接收 limit 参数。前端筛选及 40/80/120/1000 的显示上限仅作用于该快照，total 为数据库中 Artifact 总数。
+         */
         get: operations["graph"];
         put?: never;
         post?: never;

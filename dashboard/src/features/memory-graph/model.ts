@@ -75,12 +75,12 @@ export function filterGraph(
   }
 }
 
-export const memoryLimits = [40, 80, 120] as const
+export const memoryLimits = [40, 80, 120, 1000] as const
 export function recentGraph(
   graph: GraphSnapshot,
   limit: number
 ): GraphSnapshot {
-  const bound = Math.min(120, Math.max(1, Math.floor(limit) || 80))
+  const bound = Math.min(1000, Math.max(1, Math.floor(limit) || 80))
   const timestamp = (value: string) => Date.parse(value) || 0
   const nodes = [...graph.nodes]
     .sort(

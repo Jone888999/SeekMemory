@@ -22,8 +22,7 @@ def kind(art: Artifact) -> str:
 
 
 def graph(artifacts: ArtifactStore, *, limit: int = 1000) -> dict:
-    all_rows = sorted(artifacts.list(), key=lambda a: (a.header.time.updated, a.header.id), reverse=True)
-    rows = all_rows[:limit]
+    rows = artifacts.list_recent(limit)
     nodes = [{
         "id": a.header.id, "kind": kind(a), "scope": a.header.scope,
         "subject": a.header.subject_id, "state": a.header.state,
@@ -40,11 +39,11 @@ def graph(artifacts: ArtifactStore, *, limit: int = 1000) -> dict:
             key = (min(source, target), max(source, target), relation)
             edges[key] = {"source": source, "target": target, "kind": relation}
 
+    for edge in artifacts.edges_between([a.header.id for a in rows], 2000):
+        add(edge.source, edge.target, "related")
     subjects, evidence = {}, {}
     for art in rows:
         aid = art.header.id
-        for target, relation, _weight in artifacts.edges_of(aid):
-            add(aid, target, "related")
         for target in art.header.lineage.derived_from:
             add(aid, target, "derived_from")
         subject = art.header.subject_id
@@ -56,7 +55,7 @@ def graph(artifacts: ArtifactStore, *, limit: int = 1000) -> dict:
             if source in evidence:
                 add(aid, evidence[source], "evidence")
             evidence[source] = aid
-    return {"nodes": nodes, "edges": list(edges.values()), "total": len(all_rows), "limit": limit}
+    return {"nodes": nodes, "edges": list(edges.values()), "total": artifacts.count(), "limit": limit}
 
 
 def impressions(artifacts: ArtifactStore, *, offset: int, limit: int) -> dict:

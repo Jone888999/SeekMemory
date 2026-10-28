@@ -28,9 +28,11 @@ except ImportError:
     from sqlite import SqliteRepository, dump_json, now_iso
 
 try:
+    from ..core.graph import ArtifactEdge
     from ..core.artifact import Artifact
     from ..core.versioning import StateEvent, VersionError, assert_next_revision
 except ImportError:
+    from core.graph import ArtifactEdge
     from core.artifact import Artifact
     from core.versioning import StateEvent, VersionError, assert_next_revision
 
@@ -185,6 +187,38 @@ class ArtifactRepository(SqliteRepository):
                 "UPDATE nodes SET parent = ?, updated_at = ? WHERE id = ?",
                 (parent_id, now_iso(), str(node_id)),
             )
+
+    def list_recent(self, limit: int) -> list[Artifact]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("recent artifact limit must be between 1 and 1000")
+        # Limit headers before joining payload blobs; never decode the whole library.
+        rows = self.conn.execute(
+            "WITH recent AS (SELECT * FROM nodes ORDER BY updated_at DESC, id DESC LIMIT ?) "
+            "SELECT n.*, b.content AS blob_content FROM recent n "
+            "LEFT JOIN blobs b ON b.hash = n.blob ORDER BY n.updated_at DESC, n.id DESC",
+            (limit,),
+        ).fetchall()
+        return [art for art in map(row_to_artifact, rows) if art is not None]
+
+    def edges_between(self, node_ids: list[str], limit: int) -> list[ArtifactEdge]:
+        ids = sorted(set(node_ids))
+        if len(ids) > 1000 or not 1 <= limit <= 2000:
+            raise ValueError("graph edge query exceeds snapshot bounds")
+        if not ids:
+            return []
+        marks = ",".join("(?)" for _ in ids)
+        # Unary + keeps dst as a membership filter rather than a second indexed
+        # IN constraint: otherwise SQLite probes up to N*N (src, dst) pairs.
+        # Both stored IDs and parameters are text, so membership is unchanged.
+        rows = self.conn.execute(
+            f"WITH selected(id) AS (VALUES {marks}) "
+            "SELECT e.src, e.dst, e.kind, e.weight FROM edges e "
+            "WHERE e.src IN (SELECT id FROM selected) "
+            "AND +e.dst IN (SELECT id FROM selected) "
+            "AND e.src != e.dst ORDER BY e.src, e.dst, e.kind LIMIT ?",
+            [*ids, limit],
+        ).fetchall()
+        return [ArtifactEdge(str(r["src"]), str(r["dst"]), str(r["kind"]), float(r["weight"])) for r in rows]
 
     def add_edge(self, src: str, dst: str, kind: str, weight: float) -> None:
         with self.conn:
