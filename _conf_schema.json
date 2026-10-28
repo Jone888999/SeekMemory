@@ -217,6 +217,31 @@
     "type": "int",
     "default": 5000
   },
+  "relationship_mode": {
+    "description": "Relationship policy mode: off, observe, or enforce.",
+    "type": "string",
+    "default": "observe"
+  },
+  "relationship_private_weight": {
+    "description": "Weight applied to private relationship evidence.",
+    "type": "float",
+    "default": 1.0
+  },
+  "relationship_group_weight": {
+    "description": "Weight applied to group and unknown-scope relationship evidence.",
+    "type": "float",
+    "default": 0.5
+  },
+  "relationship_low_private_reply_probability": {
+    "description": "Deterministic reply probability for ordinary private statements in the low band.",
+    "type": "float",
+    "default": 0.8
+  },
+  "relationship_dislike_private_reply_probability": {
+    "description": "Deterministic reply probability for ordinary private statements in the dislike band.",
+    "type": "float",
+    "default": 0.5
+  },
   "runtime_gate_enabled": {
     "description": "Enable AgentRuntime gating of the default AstrBot LLM request (observe-only when false).",
     "type": "bool",

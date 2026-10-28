@@ -18,6 +18,10 @@ self_impression.py 只聚合六类固定 bot_behavior。每次场景必须指向
 
 persona.py 只从已验证的 self impression 选择最多三个行为类别。已有种子人格在原 Artifact ID 上演化；每次更新保留来源与版本历史。MaintenanceService 对已 bootstrap 的 persona 可按周期做一次有界模型综合；模型失败时保留旧人格。无种子旧安装可走确定性兼容路径。persona-seed 文件和演化流程见[人格种子指南](../../guides/persona-seed.md)。
 
+## 关系状态巩固
+
+relationship.py 只消费原始 `relationship-v1` 观察，并先校验 confidence、不可变 Source 是否存在、user Source 是否属于 Artifact subject，以及证据是否只有一种 private/group/unknown scope。private 证据权重为 `1.0`，group/unknown 为 `0.5`。纯规则将 counted ID 与 reviewed ID 分开，按 reason 限制同轮重复，并把单次 affinity revision 限制在 `0.10`。Maintenance 通过 expected-revision CAS 提交稳定的按 subject Relationship Artifact，成功后才更新 Cache。`relationship_mode=off` 跳过巩固；默认的 `observe` 与显式 `enforce` 都会巩固并持久化派生状态。observe 模式可以计算候选交互档案，但拒绝回复仍必须同时满足 `relationship_mode=enforce` 和 `runtime_gate_enabled=true`。
+
 ## 未接入主流程的规则
 
 reflect.py 能从相邻用户消息计算 wrong/right 信号，但仓库当前没有生产调用方；它不是自动反思、记忆修正或强化路径。任何文档或配置不能把它描述成已启用的线上功能。

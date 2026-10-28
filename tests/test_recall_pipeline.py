@@ -247,6 +247,48 @@ class SourceRecallPipelineTest(unittest.TestCase):
         if cache:
             self.cache.put(art)
         return art
+    def add_relationship(self, source_ids=()):
+        relation = make(
+            "relationship",
+            {
+                "summary": "关系状态：close。",
+                "affinity": 0.8,
+                "confidence": 0.8,
+                "evidence_count": 4,
+                "relation_band": "close",
+                "policy": {
+                    "version": "relationship-v1",
+                    "private_weight": 1.0,
+                    "group_weight": 0.5,
+                    "learning_rate": 0.25,
+                    "max_revision_delta": 0.1,
+                },
+            },
+            scope="shared",
+            subject_id="u1",
+            lineage=Lineage(sources=tuple(source_ids)),
+        )
+        self.db.artifacts.commit(
+            relation,
+            expected_revision=0,
+            op="create",
+            source_ids=tuple(source_ids),
+        )
+        return relation
+
+    def test_source_fallback_excludes_relationship_artifacts(self):
+        self.add_source("s1", "quantum trading source note")
+        relation = self.add_relationship(("s1",))
+
+        block, info = self.recall("quantum trading source note")
+
+        self.assertNotIn("关系状态：close。", block)
+        self.assertNotIn(relation.header.id, info["picked_ids"])
+        self.assertNotIn(relation.header.id, info["final_ids"])
+        self.assertNotIn(relation.header.id, info["disclosure"])
+        self.assertEqual(info["source_recall"]["artifacts"], 0)
+        self.assertEqual(info["source_recall"]["picked"], 0)
+
 
     def recall(self, query, **changes):
         conf = {**self.conf, **changes}

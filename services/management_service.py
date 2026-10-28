@@ -135,6 +135,8 @@ class ManagementService:
         """
         records = []
         for art in self.artifacts.list():
+            if art.header.family == "relationship":
+                continue
             header, payload = art.header, art.payload
             text = content_of(art) or "（空内容）"
             versions = {}

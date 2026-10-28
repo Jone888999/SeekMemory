@@ -18,6 +18,10 @@ self_impression.py aggregates only six fixed bot_behavior values. Each scene mus
 
 persona.py selects at most three behavior categories from trusted self-impressions. A seeded persona evolves on the same Artifact ID and retains evidence and version history. MaintenanceService may run one bounded model synthesis when an eligible bootstrapped persona reaches its interval; failure keeps the previous persona. Older unseeded installations may use a deterministic compatibility path. See the [persona seed guide](../../guides/persona-seed.md).
 
+## Relationship consolidation
+
+relationship.py consumes original `relationship-v1` observations only after validating confidence, immutable Source existence, user-Source ownership, and one private/group/unknown scope. Private evidence weight is `1.0`; group and unknown are `0.5`. The pure rulebook separates counted IDs from reviewed IDs, caps repeated reasons per cycle, and limits one affinity revision to `0.10`. Maintenance commits the stable per-subject Relationship Artifact through expected-revision CAS, then updates Cache. `relationship_mode=off` skips consolidation; the default `observe` mode and explicit `enforce` both consolidate and persist the derived state. Observe mode may compute a candidate interaction profile, but reply denial still requires `relationship_mode=enforce` together with `runtime_gate_enabled=true`.
+
 ## Rules not connected to the production flow
 
 reflect.py can compute wrong/right signals from adjacent user messages, but the current repository has no production caller. It is not an automatic reflection, memory-repair, or reinforcement path. Documentation and configuration must not present it as an enabled online feature.

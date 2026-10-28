@@ -16,6 +16,7 @@ try:
     )
     from ...app.runtime.recorder import RecordedReply
     from ...core.source import make_source_id
+    from ...core.interaction_policy import InteractionGate
     from ...app.runtime.tools import ToolPolicy, trace_tool_call
 except ImportError:
     from app.runtime.contracts import (
@@ -26,6 +27,7 @@ except ImportError:
     )
     from app.runtime.recorder import RecordedReply
     from core.source import make_source_id
+    from core.interaction_policy import InteractionGate
     from app.runtime.tools import ToolPolicy, trace_tool_call
 
 
@@ -49,7 +51,7 @@ class AstrBotRuntimeAdapter:
             session_id=str(umo or ""),
             text=value,
             speaker_id=str(sender or ""),
-            mentioned=mapped.private or mapped.mentioned,
+            mentioned=mapped.mentioned,
             question=("?" in value or "\uff1f" in value),
         )
 
@@ -132,6 +134,11 @@ class AstrBotRuntimeAdapter:
         return str(cls.get_extra(event, "_seekmemory_runtime_reason", "") or "")
 
     @classmethod
+    def interaction_gate(cls, event) -> InteractionGate:
+        value = cls.get_extra(event, "_seekmemory_interaction_gate", None)
+        return value if isinstance(value, InteractionGate) else InteractionGate()
+
+    @classmethod
     def bind_user(cls, event, receipt: UserRunReceipt) -> None:
         cls.set_extra(event, "_seekmemory_turn_id", receipt.turn_id)
         cls.set_extra(event, "_seekmemory_source_id", receipt.source_id)
@@ -170,9 +177,22 @@ class AstrBotRuntimeAdapter:
         cls.set_extra(event, "_seekmemory_runtime_action", decision.action.value)
         cls.set_extra(event, "_seekmemory_runtime_reason", decision.reason)
 
-    @staticmethod
-    def apply_llm_gate(event, decision: RunDecision, enabled: bool) -> None:
+    @classmethod
+    def bind_interaction(cls, event, gate: InteractionGate) -> None:
+        cls.set_extra(event, "_seekmemory_interaction_gate", gate)
+        if gate.enforced and not gate.allow_reply:
+            cls.set_extra(event, "_seekmemory_runtime_reason", gate.reason)
+
+    @classmethod
+    def apply_llm_gate(cls, event, decision: RunDecision, enabled: bool) -> None:
         if not enabled:
+            return
+        gate = cls.interaction_gate(event)
+        if gate.enforced and not gate.allow_reply:
+            try:
+                event.should_call_llm(False)
+            except Exception:  # noqa: BLE001 - host version may not expose the gate
+                pass
             return
         try:
             event.should_call_llm(

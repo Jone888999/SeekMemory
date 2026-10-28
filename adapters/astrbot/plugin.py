@@ -67,6 +67,11 @@ from .runtime import AstrBotRuntimeAdapter
 from .time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
 from .topics import AstrBotTopicSource
 from ..persona_packs import FilePersonaPacks
+from ..relationship_policy import (
+    RelationshipInteractionPolicy,
+    RelationshipReader,
+    settings_from_config,
+)
 
 class AstrBotPlugin(star.Star):
     """Composition root and lifecycle owner for the AstrBot host.
@@ -100,6 +105,7 @@ class AstrBotPlugin(star.Star):
         self.tool_policy: ToolPolicy | None = None
         self.jobs: Jobs | None = None
         self.capacity: CapacityGovernor | None = None
+        self.relationship_policy: RelationshipInteractionPolicy | None = None
         self._last_runtime_prune_at = 0.0
         self._started = False
         self._lifecycle_lock = asyncio.Lock()
@@ -132,6 +138,7 @@ class AstrBotPlugin(star.Star):
         self.buffer = None
         self.checkpoint = None
         self.dream = None
+        self.relationship_policy = None
         self.data_path = (
             Path(str(self._c("db_path", ""))).expanduser()
             if self._c("db_path", "")
@@ -219,6 +226,15 @@ class AstrBotPlugin(star.Star):
             model_gateway=AstrBotModelGateway(self.context),
             action_executor=self.action_executor,
             recorder=recorder,
+        )
+        self.relationship_policy = RelationshipInteractionPolicy(
+            RelationshipReader(self.cache),
+            settings_from_config(
+                self._c,
+                lambda key: logger.warning(
+                    f"[seekmemory] normalized relationship config: {key}"
+                ),
+            ),
         )
         if self.store is not None:
             try:

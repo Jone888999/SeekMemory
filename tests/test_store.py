@@ -6,17 +6,21 @@
 
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import sys
 import tempfile
 import unittest
 
+from contextlib import redirect_stdout
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.artifact import Artifact, make, revise
+from core.source import Source
 from store.cache import Cache
 from store import Store, open_store
+from scripts.deactivate_relationships import main as deactivate_relationships_main
 from store.ledger import chain_hash, chain_payload
 from store.ledger import Ledger
 
@@ -135,6 +139,58 @@ class DBTest(_StoreCase):
         self.assertEqual(self.db.artifacts.count(), 3)
         self.assertEqual(self.db.artifacts.count("memory"), 2)
 
+
+    def test_relationship_rollback_forgets_heads_and_preserves_audit(self) -> None:
+        source = Source(
+            "rollback-source", "rollback-turn", "bot:FriendMessage:u1",
+            "u1", "user", "fixture", "2026-10-26T12:00:00",
+        )
+        self.db.sources.append_sources([source])
+        relation = make(
+            "relationship",
+            {
+                "summary": "关系状态：冷淡",
+                "affinity": -0.3,
+                "confidence": 0.8,
+                "evidence_count": 4,
+                "relation_band": "low",
+                "policy": {
+                    "version": "relationship-v1",
+                    "private_weight": 1.0,
+                    "group_weight": 0.5,
+                    "learning_rate": 0.25,
+                    "max_revision_delta": 0.1,
+                },
+            },
+            subject_id="u1",
+            lineage={"sources": (source.id,)},
+        )
+        self.db.artifacts.commit(
+            relation, expected_revision=0, op="create", source_ids=(source.id,)
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = deactivate_relationships_main([
+                "--db", os.path.join(self.tmpdir, "memory.db"), "--confirmed",
+            ])
+        self.assertEqual(code, 0)
+        self.assertEqual(output.getvalue(), "active=1 forgotten=1 failed=0\n")
+        head = self.db.artifacts.get(relation.header.id)
+        self.assertEqual(head.header.state, "forgotten")
+        self.assertEqual(
+            [row["revision"] for row in self.db.artifacts.history(relation.header.id)],
+            [1, 2],
+        )
+        self.assertEqual(
+            self.db.sources.sources_by_ids([source.id])[source.id].text,
+            "fixture",
+        )
+        entries = [
+            row for row in self.db.ledger.entries()
+            if row["entity"] == relation.header.id
+        ]
+        self.assertEqual([row["op"] for row in entries], ["create", "forget"])
+        self.assertNotIn(source.id, output.getvalue())
     def test_edges_of_returns_both_directions(self) -> None:
         """edges_of 从边的任意一端都能查到，另一端与权重正确。"""
         left, right, third = _memory("甲"), _memory("乙"), _memory("丙")

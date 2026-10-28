@@ -16,6 +16,7 @@ from typing import Any
 try:  # 作为 astrbot 插件包的一部分导入
     from ..app.contracts import DialogueTurn, WriteOutcome
     from ..core.artifact import Artifact, Lineage, Strength, TimeSpan, content_of, make, validate
+    from ..core.relationship import RELATIONSHIP_POLICY_VERSION
     from ..perceive.behavior import (
         DEFAULT_BEHAVIOR_CONFIDENCE,
         behavior_boundary,
@@ -33,10 +34,16 @@ try:  # 作为 astrbot 插件包的一部分导入
         filter_duplicates,
         parse_response_checked,
     )
+    from ..perceive.relationship import (
+        is_relationship_observation,
+        observation_boundary,
+        validate_observation,
+    )
     from ..app.ports import ArtifactCache, SourceStore
 except ImportError:  # 作为顶层包导入（脚本 / 测试）
     from app.contracts import DialogueTurn, WriteOutcome
     from core.artifact import Artifact, Lineage, Strength, TimeSpan, content_of, make, validate
+    from core.relationship import RELATIONSHIP_POLICY_VERSION
     from app.ports import ArtifactCache, SourceStore
 
     from perceive.behavior import (
@@ -55,6 +62,11 @@ except ImportError:  # 作为顶层包导入（脚本 / 测试）
         ExtractionParseError,
         filter_duplicates,
         parse_response_checked,
+    )
+    from perceive.relationship import (
+        is_relationship_observation,
+        observation_boundary,
+        validate_observation,
     )
 
 MAX_ITEMS = 6
@@ -289,6 +301,12 @@ def existing_texts_by_subject(cache: ArtifactCache | None) -> dict[str, list[str
                     behavior_of(art.payload),
                     art.header.lineage.sources,
                 )
+            elif is_relationship_observation(art.payload):
+                boundary = observation_boundary(
+                    boundary,
+                    art.payload,
+                    art.header.lineage.sources,
+                )
             out.setdefault(boundary, []).append(content_of(art))
     except Exception:  # noqa: BLE001 - a broken cache view means no dedupe history
         return {}
@@ -349,9 +367,11 @@ def build_plan(
 
     def boundary_of(item: dict) -> str:
         base = _boundary(scope, _subject_id(item, owner, default_subject, owner_id))
-        if not is_behavior(item):
-            return base
-        return behavior_boundary(base, behavior_of(item), evidence_ids(item))
+        if is_behavior(item):
+            return behavior_boundary(base, behavior_of(item), evidence_ids(item))
+        if is_relationship_observation(item):
+            return observation_boundary(base, item, evidence_ids(item))
+        return base
 
     try:
         with stage("response.parse"):
@@ -368,7 +388,10 @@ def build_plan(
         candidate = {**item, "owner_umo": owner} if owner else dict(item)
         try:
             check_payload(candidate)
+            validate_observation(candidate)
             evidence = validate_evidence(candidate, available, session_id=owner)
+            if is_relationship_observation(candidate) and not evidence:
+                raise ValueError("relationship observation requires evidence_source_ids")
             if require_evidence:
                 if not evidence:
                     raise ValueError(
@@ -414,6 +437,8 @@ def build_plan(
         evidence = evidence_of.get(id(item), ())
         try:
             payload = payload_of(item)
+            if is_relationship_observation(item):
+                payload["relationship_policy_version"] = RELATIONSHIP_POLICY_VERSION
             if group and len(senders) > 1:
                 payload["speakers"] = sorted(senders)
             strength = strength_of(item)

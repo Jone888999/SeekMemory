@@ -153,9 +153,10 @@ def build_block(
     scene = RecallScene(umo, str(speaker or ""), owner_id, (str(speaker or ""),))
     pinned_arts = visible(pinned(cache, subject), umo, owner_umo, lookup)
     pool = [
-        a
-        for a in visible(cache.active(), umo, owner_umo, lookup)
-        if deliverable(a, text, private)
+        art
+        for art in visible(cache.active(), umo, owner_umo, lookup)
+        if art.header.family != "relationship"
+        and deliverable(art, text, private)
     ]
     pool = filter_valid(pool)
     window = query_window(text)
@@ -311,7 +312,11 @@ def build_block(
                         for index, source_id in enumerate(source_ids)
                     }
                     source_arts = sorted(
-                        artifacts.by_source_ids(source_ids),
+                        (
+                            art
+                            for art in artifacts.by_source_ids(source_ids)
+                            if art.header.family != "relationship"
+                        ),
                         key=lambda art: (
                             min(
                                 (

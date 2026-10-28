@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import math
 from typing import Any, Awaitable, Callable
 
 try:
@@ -56,21 +57,72 @@ class MaintenanceService:
         self.persona_model = persona_model
         self.clock = clock or datetime.datetime.now
 
+    def _relationship_mode(self) -> str:
+        mode = str(self._c("relationship_mode", "observe") or "").strip().lower()
+        if mode in ("off", "observe", "enforce"):
+            return mode
+        self.logger.warning("[seekmemory] invalid relationship config: relationship_mode")
+        return "observe"
+
+    def _relationship_weight(self, key: str, default: float) -> float:
+        invalid = False
+        try:
+            value = float(self._c(key, default))
+        except (TypeError, ValueError):
+            value = default
+            invalid = True
+        if not math.isfinite(value):
+            value = default
+            invalid = True
+        clamped = max(0.0, min(1.0, value))
+        if invalid or clamped != value:
+            self.logger.warning(f"[seekmemory] clamped relationship config: {key}")
+        return clamped
+
+    def _relationship_policy(self):
+        try:
+            from ..core.relationship_rules import RelationshipScoringPolicy
+        except ImportError:
+            from core.relationship_rules import RelationshipScoringPolicy
+        private_weight = self._relationship_weight(
+            "relationship_private_weight", 1.0
+        )
+        group_weight = self._relationship_weight(
+            "relationship_group_weight", 0.5
+        )
+        return RelationshipScoringPolicy(
+            private_weight=private_weight,
+            group_weight=group_weight,
+            unknown_weight=group_weight,
+        )
+
     async def weekly(self) -> dict:
         try:
             from ..maintain.decay import decay_all
             from ..maintain.merge import merge_similar
             from ..maintain.persona import distill_self_persona
             from ..maintain.self_impression import build_self_impressions
+            from ..maintain.relationship import consolidate_relationships
         except ImportError:
             from maintain.decay import decay_all
             from maintain.merge import merge_similar
             from maintain.persona import distill_self_persona
             from maintain.self_impression import build_self_impressions
+            from maintain.relationship import consolidate_relationships
 
         if self.artifacts is None or self.sources is None or self.cache is None:
             return {}
         today = datetime.date.today().isoformat()
+        relationships = 0
+        if self._relationship_mode() != "off":
+            with self.journal.span("weekly", "relationship") as metrics:
+                relationships = consolidate_relationships(
+                    self.artifacts,
+                    self.sources,
+                    self.cache,
+                    self._relationship_policy(),
+                )
+                metrics["updated"] = relationships
         with self.journal.span("weekly", "self_impression") as metrics:
             self_made = build_self_impressions(self.artifacts, self.sources, self.cache, today=today)
             metrics["made"] = self_made
@@ -108,12 +160,13 @@ class MaintenanceService:
         self.journal.record(
             "weekly",
             "info",
-            f"forgot {dropped}, merged {merged}, persona: {persona_result.get('status', 'unchanged')}",
+            f"relationships {relationships}, forgot {dropped}, merged {merged}, persona: {persona_result.get('status', 'unchanged')}",
             self.task_id(),
         )
         self.logger.info(
-            f"[seekmemory] weekly maintenance: forgot {dropped}, "
-            f"merged {merged}, persona {persona_result.get('status', 'unchanged')}"
+            f"[seekmemory] weekly maintenance: relationships {relationships}, "
+            f"forgot {dropped}, merged {merged}, "
+            f"persona {persona_result.get('status', 'unchanged')}"
         )
         return {
             "forgotten": dropped,
@@ -121,6 +174,7 @@ class MaintenanceService:
             "self_impressions": self_made,
             "persona": bool(persona),
             "persona_result": persona_result,
+            "relationships": relationships,
         }
 
     async def _synthesize_persona_async(self) -> dict:
