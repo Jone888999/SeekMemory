@@ -181,3 +181,5 @@ $env:SEEKMEMORY_DISABLE = '1'
 ## 许可
 
 MIT。内核侧遵循上游的 MIT / Apache-2.0 双许可。
+
+平台适配器接入契约见 [`PLATFORM-CONTRACT.md`](PLATFORM-CONTRACT.md)：平台插件实现 `PlatformAdapter`，通过 `host-bridge` 调用 Runtime；HostBridge 不注册全局 hook。
