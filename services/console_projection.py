@@ -1,8 +1,6 @@
 """Bounded, read-only console projections. No Source bodies or write side effects."""
 from __future__ import annotations
 
-from collections import defaultdict
-
 try:
     from ..core.artifact import Artifact, content_of
     from ..app.ports import ArtifactStore
@@ -60,16 +58,10 @@ def graph(artifacts: ArtifactStore, *, limit: int = 120) -> dict:
 
 
 def impressions(artifacts: ArtifactStore, *, offset: int, limit: int) -> dict:
-    groups = defaultdict(list)
-    for art in artifacts.list(family="memory", state="active"):
-        if art.payload.get("level") != "impression" or not art.header.subject_id:
-            continue
-        # Never collapse people or privacy boundaries into a single derived summary.
-        key = (art.header.subject_id, art.header.scope)
-        groups[key].append(art)
+    rows = artifacts.list_impressions(limit=limit, offset=offset)
     cards = []
-    for (subject, scope), rows in sorted(groups.items()):
-        art = max(rows, key=lambda a: (a.header.time.updated, a.header.revision, a.header.id))
+    for art in rows:
+        subject = art.header.subject_id
         subject_kind = str(art.payload.get("subject_kind", "unknown"))
         if subject == "bot:self":
             subject_kind = "self"
@@ -77,11 +69,12 @@ def impressions(artifacts: ArtifactStore, *, offset: int, limit: int) -> dict:
             "id": art.header.id, "subjectId": subject, "subjectKind": subject_kind,
             "displayName": "自己" if subject == "bot:self" else subject,
             "summary": "受保护的印象，点击查看" if protected(art) else content_of(art)[:160],
-            "scope": scope, "confidence": max(0, min(1, art.header.strength.confidence)),
+            "scope": art.header.scope, "confidence": max(0, min(1, art.header.strength.confidence)),
             "evidenceCount": len(set(art.header.lineage.sources)),
             "revision": art.header.revision, "updatedAt": art.header.time.updated,
         })
-    return {"items": cards[offset:offset + limit], "total": len(cards), "offset": offset, "limit": limit}
+    return {"items": cards, "total": artifacts.count_impressions(),
+            "offset": offset, "limit": limit}
 
 
 def dreams(rows: list[dict]) -> dict:

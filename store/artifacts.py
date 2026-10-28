@@ -203,6 +203,38 @@ class ArtifactRepository(SqliteRepository):
         ).fetchall()
         return [art for art in map(row_to_artifact, rows) if art is not None]
 
+    def list_impressions(self, limit: int, offset: int = 0) -> list[Artifact]:
+        """Read one deterministic, paginated impression per subject/scope."""
+        if not 1 <= limit <= 100 or not 0 <= offset <= 100000:
+            raise ValueError("impression page parameters are out of bounds")
+        rows = self.conn.execute(
+            "WITH ranked AS ("
+            "SELECT n.*, b.content AS blob_content, "
+            "ROW_NUMBER() OVER (PARTITION BY n.subject_id, n.scope "
+            "ORDER BY n.updated_at DESC, n.revision DESC, n.id DESC) AS rn "
+            "FROM nodes n LEFT JOIN blobs b ON b.hash = n.blob "
+            "WHERE n.family = 'memory' AND n.state = 'active' "
+            "AND n.subject_id IS NOT NULL AND n.subject_id != '' "
+            "AND json_extract(b.content, '$.level') = 'impression') "
+            "SELECT * FROM ranked WHERE rn = 1 "
+            "ORDER BY subject_id, scope, updated_at DESC, id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        return [art for art in map(row_to_artifact, rows) if art is not None]
+
+    def count_impressions(self) -> int:
+        """Count distinct subject/scope impression groups without loading them."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM ("
+            "SELECT n.subject_id, n.scope FROM nodes n "
+            "LEFT JOIN blobs b ON b.hash = n.blob "
+            "WHERE n.family = 'memory' AND n.state = 'active' "
+            "AND n.subject_id IS NOT NULL AND n.subject_id != '' "
+            "AND json_extract(b.content, '$.level') = 'impression' "
+            "GROUP BY n.subject_id, n.scope)"
+        ).fetchone()
+        return int(row["c"]) if row is not None else 0
+
     def edges_between(self, node_ids: list[str], limit: int) -> list[ArtifactEdge]:
         ids = sorted(set(node_ids))
         if len(ids) > 120 or not 1 <= limit <= 240:

@@ -49,9 +49,12 @@ class ConsoleTest(unittest.TestCase):
         for scope in ['private', 'shadow']:
             self.seed('memory', {'text':'PRIVATE_SENTINEL', 'level':'impression', 'subject_kind':'user'}, subject_id='123', scope=scope)
         self.seed('memory', {'text':'world', 'level':'impression'}, subject_id='world')
-        result = self.service.impressions(offset=0, limit=2)
+        with patch.object(self.store.artifacts, 'list', side_effect=AssertionError('unbounded read')):
+            result = self.service.impressions(offset=0, limit=2)
+            page = self.service.impressions(offset=2, limit=1)
         self.assertEqual(result['total'], 3)
         self.assertEqual(len(result['items']), 2)
+        self.assertEqual(len(page['items']), 1)
         shadow = next(c for c in result['items'] if c['scope']=='shadow')
         self.assertNotIn('PRIVATE_SENTINEL', shadow['summary'])
         with self.assertRaises(ValueError): self.service.impressions(offset=-1)
