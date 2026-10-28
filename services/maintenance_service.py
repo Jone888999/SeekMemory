@@ -58,7 +58,7 @@ class MaintenanceService:
         self.clock = clock or datetime.datetime.now
 
     def _relationship_mode(self) -> str:
-        mode = str(self._c("relationship_mode", "enforce") or "").strip().lower()
+        mode = str(self._c("relationship_mode", "observe") or "").strip().lower()
         if mode in ("off", "observe", "enforce"):
             return mode
         self.logger.warning("[seekmemory] invalid relationship config: relationship_mode")

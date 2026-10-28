@@ -45,3 +45,4 @@ subject_key 表示稳定记忆归属，session_id 表示本轮运行会话，二
 
 DSH 每个宿主上下文只注册一次；卸载会撤销钩子、取消桥接请求并清空上下文缓存，迟到的响应不再注入。仓库现在还提供 `scripts/runtime_http.py` 真实 Python 本机服务入口，以及让 DSH RuntimeBridge 驱动它的 Node 集成测试。
 关系模式默认为 observe：RelationshipInteractionPolicy 可以计算无正文的候选交互档案，但默认不会注入 directive 或拒绝回复。拒绝回复必须同时满足显式 `relationship_mode=enforce` 和现有 `runtime_gate_enabled=true`；allowed/neutral 关系不会启用该 gate。仅在显式启用 enforcement 时，low/dislike 的普通私聊陈述才按 Source ID 做稳定 `0.8`/`0.5` 采样；真实问题和宿主 direct signal 仍是 required reply。相同的显式 enforcement 控制下，low/dislike 群聊 ambient 被拒绝。Relationship Artifact 不进入 Recall 或管理目录。
+关系模式默认为 observe：RelationshipInteractionPolicy 可以计算无正文的候选交互档案，但默认不会注入 directive 或拒绝回复。拒绝回复必须同时满足显式 `relationship_mode=enforce` 和现有 `runtime_gate_enabled=true`；allowed/neutral 关系不会启用该 gate。仅在显式启用 enforcement 时，low/dislike 的普通私聊陈述才按 Source ID 做稳定 `0.8`/`0.5` 采样；真实问题和宿主 direct signal 仍是 required reply。相同的显式 enforcement 控制下，low/dislike 群聊 ambient 被拒绝。Relationship Artifact 不进入 Recall 或管理目录。

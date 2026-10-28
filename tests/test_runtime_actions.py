@@ -108,7 +108,7 @@ class ActionTest(unittest.TestCase):
         AstrBotRuntimeAdapter.apply_llm_gate(event, decision, True)
         self.assertFalse(event.call_llm)
 
-    def test_relationship_denial_is_enforced_when_base_gate_is_disabled(self) -> None:
+    def test_relationship_denial_respects_disabled_base_gate(self) -> None:
         event = Event()
         decision = RunDecision(
             WakeAction.REPLY,
@@ -118,7 +118,7 @@ class ActionTest(unittest.TestCase):
             event, InteractionGate(enforced=True, allow_reply=False)
         )
         AstrBotRuntimeAdapter.apply_llm_gate(event, decision, False)
-        self.assertFalse(event.call_llm)
+        self.assertTrue(event.call_llm)
 
     def test_tool_policy_and_trace(self) -> None:
         event = Event()

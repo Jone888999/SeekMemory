@@ -220,7 +220,7 @@
   "relationship_mode": {
     "description": "Relationship policy mode: off, observe, or enforce.",
     "type": "string",
-    "default": "enforce"
+    "default": "observe"
   },
   "relationship_private_weight": {
     "description": "Weight applied to private relationship evidence.",

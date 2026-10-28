@@ -71,7 +71,7 @@ class InteractionGate:
 
 @dataclass(frozen=True)
 class InteractionPolicySettings:
-    mode: str = "enforce"
+    mode: str = "observe"
     low_private_reply_probability: float = 0.8
     dislike_private_reply_probability: float = 0.5
 

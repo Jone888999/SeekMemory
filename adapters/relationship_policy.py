@@ -111,7 +111,7 @@ def settings_from_config(
     warn: Callable[[str], None] = lambda _key: None,
 ) -> InteractionPolicySettings:
     """Normalize backend relationship mode and probabilities without user data."""
-    mode = str(config("relationship_mode", "enforce") or "").strip().lower()
+    mode = str(config("relationship_mode", "observe") or "").strip().lower()
     if mode not in ("off", "observe", "enforce"):
         warn("relationship_mode")
         mode = "observe"
