@@ -8,12 +8,16 @@ from dataclasses import replace
 from typing import Callable
 
 from .contracts import (
+    ActionKind,
+    ActionRequest,
     MemoryContext,
     MemoryContextPort,
     MemoryContextRequest,
     MessageSender,
+    ProactiveDecision,
     ModelGateway,
     RunContext,
+    AttentionDecision,
     RunDecision,
     RunResult,
     RuntimeInput,
@@ -23,8 +27,12 @@ from .contracts import (
     TraceSink,
     WakeAction,
 )
+from .actions import ActionExecutor
 from .recorder import RecordedReply, RunRecorder
-from .wake import WakePolicy
+from .attention import DefaultAttentionPolicy
+from .topics import TopicCandidate
+
+MAX_FOLLOWUP_SPEAKERS = 64
 
 
 class AgentRuntime:
@@ -33,22 +41,24 @@ class AgentRuntime:
     def __init__(
         self,
         store: SessionStateStore,
-        policy: WakePolicy | None = None,
+        policy: DefaultAttentionPolicy | None = None,
         trace: TraceSink | None = None,
         clock: Callable[[], float] | None = None,
         memory_context: MemoryContextPort | None = None,
         wait_seconds: float = 0.0,
         model_gateway: ModelGateway | None = None,
+        action_executor: ActionExecutor | None = None,
         message_sender: MessageSender | None = None,
         recorder: RunRecorder | None = None,
     ) -> None:
         self.store = store
-        self.policy = policy or WakePolicy()
+        self.policy = policy or DefaultAttentionPolicy()
         self.trace = trace
         self.clock = clock or (lambda: 0.0)
         self.memory_context = memory_context
         self.wait_seconds = max(0.0, float(wait_seconds))
         self.model_gateway = model_gateway
+        self.action_executor = action_executor
         self.message_sender = message_sender
         self.recorder = recorder
 
@@ -78,6 +88,27 @@ class AgentRuntime:
         state.revision = max(0, int(state.revision or 0)) + 1
         self.store.put(state)
 
+    async def _send_text(
+        self, session_id: str, text: str, *, run_id: str, callback_key: str
+    ) -> bool:
+        if self.action_executor is not None:
+            result = await self.action_executor.execute(
+                ActionRequest(
+                    session_id=session_id,
+                    kind=ActionKind.SEND_TEXT,
+                    text=text,
+                ),
+                run_id=run_id,
+                callback_key=callback_key,
+                at=self.clock(),
+            )
+            if not result.ok:
+                raise RuntimeError(result.reason or "send_failed")
+            return True
+        if self.message_sender is not None:
+            return bool(await self.message_sender.send(session_id, text))
+        raise RuntimeError("runtime_port_missing")
+
     def observe(
         self, event: RuntimeInput, *, now: float | None = None
     ) -> RunDecision:
@@ -105,7 +136,17 @@ class AgentRuntime:
         state.unread_count = max(
             int(event.unread_count), observed_seq - int(state.read_through_seq), 1
         )
-        decision = self.policy.evaluate(event, state, moment)
+        policy_decision = self.policy.evaluate(event, state, moment)
+        speaker_id = str(policy_decision.followup_speaker_id or "")
+        if speaker_id and policy_decision.followup_remaining is not None:
+            remaining = max(0, int(policy_decision.followup_remaining))
+            if remaining:
+                state.followup_by_speaker[speaker_id] = remaining
+                while len(state.followup_by_speaker) > MAX_FOLLOWUP_SPEAKERS:
+                    state.followup_by_speaker.pop(next(iter(state.followup_by_speaker)))
+            else:
+                state.followup_by_speaker.pop(speaker_id, None)
+        decision = policy_decision.runtime_decision()
         state.last_action = decision.action.value
         state.last_reason = decision.reason
         if decision.action is WakeAction.REPLY:
@@ -139,6 +180,7 @@ class AgentRuntime:
         event_id: str = "",
         deferred: bool = False,
         now: float | None = None,
+        decision: RunDecision | None = None,
     ) -> UserRunReceipt:
         """Record one user turn, then evaluate the run decision.
 
@@ -164,7 +206,8 @@ class AgentRuntime:
                 at=at,
                 deferred=deferred,
             )
-        decision = self.observe(event, now=now)
+        if decision is None:
+            decision = self.observe(event, now=now)
         return UserRunReceipt(
             decision=decision,
             source_id=recorded.source_id if recorded is not None else "",
@@ -288,7 +331,9 @@ class AgentRuntime:
         if not text:
             self.clear_wait(session_id, now)
             return RunResult(run_id, session_id, False, error="empty_source")
-        if self.model_gateway is None or self.message_sender is None:
+        if self.model_gateway is None or (
+            self.action_executor is None and self.message_sender is None
+        ):
             return RunResult(run_id, session_id, False, error="runtime_port_missing")
         if self.recorder is None:
             return RunResult(run_id, session_id, False, error="recorder_missing")
@@ -320,9 +365,12 @@ class AgentRuntime:
             )
             if not str(reply or "").strip():
                 raise RuntimeError("empty_response")
-            sent = await self.message_sender.send(session_id, reply)
-            if sent is False:
-                raise RuntimeError("send_failed")
+            await self._send_text(
+                session_id,
+                reply,
+                run_id=run_id,
+                callback_key=f"deferred:{run_id}",
+            )
         except (Exception, asyncio.CancelledError) as exc:
             try:
                 # Refresh after awaited model/send work; explicit start time
@@ -390,6 +438,134 @@ class AgentRuntime:
             assistant_source_id=recorded.assistant_source_id,
             response_chars=recorded.response_chars,
         )
+
+    async def dispatch_proactive(
+        self,
+        context: RunContext,
+        decision: ProactiveDecision,
+        *,
+        topic: TopicCandidate | None = None,
+        now: float | None = None,
+    ) -> RunResult:
+        """Generate, send and record one due proactive turn."""
+        moment = self.clock() if now is None else float(now)
+        session_id = str(context.session_id or "")
+        run_id = str(context.run_id or "")
+        if not decision.should_speak:
+            return RunResult(run_id, session_id, False, error="not_due")
+        if self.model_gateway is None or (
+            self.action_executor is None and self.message_sender is None
+        ):
+            return RunResult(run_id, session_id, False, error="runtime_port_missing")
+        if self.recorder is None:
+            return RunResult(run_id, session_id, False, error="recorder_missing")
+        if not run_id:
+            run_id = self.recorder.new_run_id()
+        topic_text = str(topic.text if topic is not None else "").strip()
+        runtime_input = RuntimeInput(
+            session_id=session_id,
+            text=topic_text or context.text,
+            event_time=context.event_time,
+            received_at=context.received_at,
+        )
+        try:
+            memory = self.build_context(runtime_input, now=moment, reason="proactive")
+            prompt = (memory.text or "").strip()
+            if topic_text:
+                prompt = (
+                    f"{prompt}\n\n主动由头（来自记忆）：{topic_text}"
+                ).strip()
+            reply = await self.model_gateway.complete(
+                session_id, prompt or context.text, None
+            )
+            if not str(reply or "").strip():
+                raise RuntimeError("empty_response")
+            await self._send_text(
+                session_id,
+                reply,
+                run_id=run_id,
+                callback_key=f"proactive:{run_id}",
+            )
+        except (Exception, asyncio.CancelledError) as exc:
+            state = self.store.get(session_id)
+            state.last_proactive_at = moment
+            state.proactive_attempts = int(state.proactive_attempts or 0) + 1
+            state.last_action = "wait"
+            state.last_reason = decision.reason
+            self._save(state)
+            at = datetime.datetime.fromtimestamp(
+                moment, datetime.timezone.utc
+            ).isoformat(timespec="seconds")
+            try:
+                self.recorder.record_deferred_error(
+                    run_id=run_id,
+                    session_id=session_id,
+                    user_source_id=context.source_id,
+                    error=exc,
+                    decision="proactive",
+                    reason=decision.reason,
+                    at=at,
+                )
+            finally:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise exc
+            return RunResult(run_id, session_id, False, error=type(exc).__name__)
+
+        at = datetime.datetime.fromtimestamp(
+            moment, datetime.timezone.utc
+        ).isoformat(timespec="seconds")
+        recorded = self.recorder.record_deferred_reply(
+            run_id=run_id,
+            session_id=session_id,
+            text=reply,
+            speaker_id=str(context.bot_id or "bot"),
+            user_source_id=context.source_id,
+            decision="proactive",
+            reason=decision.reason,
+            at=at,
+        )
+        state = self.store.get(session_id)
+        state.last_proactive_at = moment
+        state.proactive_attempts = int(state.proactive_attempts or 0) + 1
+        state.proactive_due_at = 0.0
+        state.last_action = "reply"
+        state.last_reason = decision.reason
+        self._save(state)
+        return RunResult(
+            run_id,
+            session_id,
+            True,
+            assistant_source_id=recorded.assistant_source_id,
+            response_chars=recorded.response_chars,
+        )
+
+    def schedule_proactive(
+        self,
+        session_id: str,
+        delay_seconds: float,
+        *,
+        now: float | None = None,
+    ) -> SessionState:
+        """Arm the next proactive opportunity after user activity.
+
+        Hosts own the decision to schedule; the runtime only persists the
+        explicit due time consumed by ProactivePolicy and RuntimeWorker.
+        """
+        moment = self.clock() if now is None else float(now)
+        delay = max(0.0, float(delay_seconds))
+        state = self.store.get(session_id)
+        state.proactive_due_at = moment + delay
+        state.proactive_attempts = 0
+        state.last_seen_at = moment
+        self._save(state)
+        return state
+
+    def clear_proactive(self, session_id: str) -> SessionState:
+        """Cancel a due proactive opportunity without touching user state."""
+        state = self.store.get(session_id)
+        state.proactive_due_at = 0.0
+        self._save(state)
+        return state
 
     def clear_wait(self, session_id: str, now: float | None = None) -> SessionState:
         state = self.store.get(session_id)
@@ -469,10 +645,6 @@ class AgentRuntime:
         moment = self.clock() if now is None else now
         state = self.store.get(session_id)
         state.last_spoke_at = max(state.last_spoke_at, moment)
-        state.cooldown_until = max(
-            state.cooldown_until,
-            state.last_spoke_at + max(0.0, state.reply_cooldown_seconds),
-        )
         if read_through_seq is not None:
             cursor = min(state.last_unread_seq, max(0, int(read_through_seq)))
             advanced = cursor > state.read_through_seq

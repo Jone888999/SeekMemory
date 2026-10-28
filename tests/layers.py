@@ -1,104 +1,48 @@
-"""Test-layer map for local runs and CI.
+"""Automatic test-layer discovery for local runs and CI.
 
-The test files stay flat for unittest compatibility. This map gives each file one
-primary responsibility so reviewers can run only the layer they changed.
+Test files stay flat for unittest compatibility. New tests are classified by
+name conventions so adding a test no longer requires editing a central map.
 """
 
 from __future__ import annotations
 
-LAYERS: dict[str, tuple[str, ...]] = {
-    "unit": (
-        "test_agent_runtime.py",
-        "test_architecture_boundaries.py",
-        "test_artifact.py",
-        "test_attention_policy.py",
-        "test_bm25.py",
-        "test_calling.py",
-        "test_capacity.py",
-        "test_dream.py",
-        "test_flush_batches.py",
-        "test_gate.py",
-        "test_importance.py",
-        "test_journal.py",
-        "test_layers.py",
-        "test_lifecycle.py",
-        "test_link.py",
-        "test_maintain.py",
-        "test_persona.py",
-        "test_persona_bootstrap.py",
-        "test_persona_injection.py",
-        "test_persona_lifecycle_contract.py",
-        "test_persona_synthesis.py",
-        "test_persona_synthesis_edges.py",
-        "test_scope.py",
-        "test_seekmemory_context.py",
-        "test_store.py",
-        "test_strength.py",
-        "test_trace.py",
-        "test_run_trace.py",
-    ),
-    "contract": (
-        "test_api_contract.py",
-        "test_public_interfaces.py",
-        "test_runtime_host_contract.py",
-    ),
-    # Host-port conformance: 任何宿主实现都必须通过（见 app/ports.py）。
-    "conformance": (
-        "test_host_ports_conformance.py",
-    ),
-    "integration": (
-        "test_absorb.py",
-        "test_attention_e2e.py",
-        "test_astrbot_time.py",
-        "test_dream_eval.py",
-        "test_e2e_kernel.py",
-        "test_continuity.py",
-        "test_failure_recovery.py",
-        "test_group_memory.py",
-        "test_privacy_outputs.py",
-        "test_persona_long_horizon.py",
-        "test_identity_isolation.py",
-        "test_lineage_consistency.py",
-        "test_migration.py",
-        "test_kernel.py",
-        "test_recall.py",
-        "test_recall_feel.py",
-        "test_recall_pipeline.py",
-        "test_source_query.py",
-        "test_self_impression.py",
-        "test_reinforcement.py",
-        "test_runtime_actions.py",
-        "test_runtime_plugin.py",
-        "test_run_recorder.py",
-        "test_runtime_scheduler.py",
-        "test_runtime_tool_guard.py",
-        "test_runtime_adapter.py",
-        "test_runtime_contracts.py",
-        "test_runtime_host_ports.py",
-        "test_runtime_delivery.py",
-        "test_runtime_recovery.py",
-        "test_runtime_worker.py",
-        "test_temporal.py",
-        "test_webui.py",
-        "test_console.py",
-    ),
-    "host": (
-        "test_webui_host.py",
-    ),
-    "smoke": (
-        "test_package.py",
-        "test_eval_harness.py",
-        "test_smoke.py",
-    ),
-}
+from pathlib import Path
 
 ALL_LAYERS = ("unit", "contract", "conformance", "integration", "host", "smoke")
+SMOKE = {"test_package.py", "test_eval_harness.py", "test_smoke.py"}
+CONTRACT = {"test_public_interfaces.py", "test_runtime_host_contract.py"}
+INTEGRATION_MARKERS = (
+    "e2e", "absorb", "attention", "astrbot", "continuity", "dream_eval",
+    "failure", "group", "privacy", "identity", "lineage", "migration",
+    "kernel", "recall", "self_impression", "reinforcement", "run_recorder",
+    "runtime_", "temporal", "webui", "console",
+)
+
+
+def _test_files() -> list[Path]:
+    return sorted(Path(__file__).resolve().parent.glob("test_*.py"))
+
+
+def _layer_for(path: Path) -> str:
+    name = path.name
+    if name in SMOKE:
+        return "smoke"
+    if name in CONTRACT or name.endswith("_contract.py"):
+        return "contract"
+    if "conformance" in name:
+        return "conformance"
+    if name.endswith("_host.py"):
+        return "host"
+    if any(marker in name for marker in INTEGRATION_MARKERS):
+        return "integration"
+    return "unit"
 
 
 def files_for(layer: str) -> tuple[str, ...]:
-    """Return test file names for one layer; all means every mapped test."""
+    """Return test file names for one layer; all means every discovered test."""
+    files = _test_files()
     if layer == "all":
-        return tuple(sorted({name for names in LAYERS.values() for name in names}))
-    if layer not in LAYERS:
+        return tuple(path.name for path in files)
+    if layer not in ALL_LAYERS:
         raise ValueError(f"unknown test layer: {layer}")
-    return LAYERS[layer]
+    return tuple(path.name for path in files if _layer_for(path) == layer)

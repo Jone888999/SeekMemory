@@ -2,7 +2,7 @@
 
 > Status: **decided (v0.4.2)**. This page records why no HostEvent layer is introduced
 > yet, and what would trigger a revisit. Authoritative implementation:
-> `RuntimeInput` in `app/runtime/contracts.py`.
+> `RuntimeInput` in `app/runtime/contracts/`.
 
 ## Decision
 
@@ -32,7 +32,7 @@ host event ──adapter mapping──▶ RuntimeInput ──▶ AttentionPolicy
 1. Two hosts only (AstrBot, DSH): a lossless event layer costs more than it saves.
 2. Rich content is normalized by the Source layer; decision logic does not need `ContentPart`.
 3. Policies need **signals**, not events: relationship / relevance / heat / time window are
-   expressed by `app/runtime/signals.py` and reused by attention, proactive and recall.
+   generic `RuntimeInput` fields and optional host-supplied signals; policies should not depend on platform names.
 4. Parallel development boundary: #114/#116/#117 are changing `contracts.py` and adapters;
    adding another layer widens the conflict surface.
 

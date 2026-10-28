@@ -11,10 +11,10 @@ from pathlib import Path
 from astrbot.api import logger, star
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
-from ..app.budget import budget_from_config
-from ..app.checkpoint import CheckpointManager
-from ..app.dream import DreamCycle
-from ..app.runtime import (
+from ...app.budget import budget_from_config
+from ...app.checkpoint import CheckpointManager
+from ...app.dream import DreamCycle
+from ...app.runtime import (
     AgentRuntime,
     RepoEpisodeStore,
     RepoStateStore,
@@ -23,16 +23,21 @@ from ..app.runtime import (
     JsonlEpisodeStore,
     MemoryContext,
     MemoryContextRequest,
+    ActionExecutor,
+    ActionLedger,
+    DefaultAttentionPolicy,
+    DefaultProactivePolicy,
+    RepoActionSink,
     RunContext,
     RuntimeWorker,
     Scheduler,
     ToolPolicy,
 )
-from ..app.runtime.tracing import RunTracer
-from ..core.capacity import CapacityGovernor, CapacityThresholds, load_thresholds
-from ..core.graph import Graph
-from ..core.tree import Tree
-from ..services import (
+from ...app.runtime.tracing import RunTracer
+from ...core.capacity import CapacityGovernor, CapacityThresholds, load_thresholds
+from ...core.graph import Graph
+from ...core.tree import Tree
+from ...services import (
     AccessPolicy,
     AccessService,
     BackgroundService,
@@ -44,28 +49,29 @@ from ..services import (
     ServiceCollection,
     StatusService,
 )
-from ..perceive.model import ProviderChatModel
-from ..recall.retriever import HybridRetriever
-from ..adapters.astrbot_actions import AstrBotActionPort
-from ..adapters.astrbot_model import AstrBotModelGateway
-from ..adapters.seekmemory_context import SeekMemoryContextAdapter
-from ..store.cache import Cache
-from ..store import Store, open_store
-from ..store.run_trace import TraceStore
-from ..webui.jobs import Jobs
-from ..webui.journal import Journal
-from ..webui.routes import WebRoutes
-from ..webui.trace import Trace
-from .astrbot_attention import AttentionHooks
-from .astrbot_hooks import AstrBotHooks
-from .persona_packs import FilePersonaPacks
-from .astrbot_runtime import AstrBotRuntimeAdapter
-from .astrbot_time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
+from ...perceive.model import ProviderChatModel
+from ...recall.retriever import HybridRetriever
+from .actions import AstrBotActionPort
+from .model import AstrBotModelGateway
+from .context import SeekMemoryContextAdapter
+from ...store.cache import Cache
+from ...store import Store, open_store
+from ...store.run_trace import TraceStore
+from ...webui.jobs import Jobs
+from ...webui.journal import Journal
+from .web import WebRoutes
+from ...webui.trace import Trace
+from .attention import AttentionHooks
+from .hooks import AstrBotHooks
+from .runtime import AstrBotRuntimeAdapter
+from .time import AstrBotBuffer, AstrBotRunRecorder, AstrBotSourceView
+from .topics import AstrBotTopicSource
+from ..persona_packs import FilePersonaPacks
 
-class AstrBotPlugin(AttentionHooks, AstrBotHooks):
+class AstrBotPlugin(star.Star):
     """Composition root and lifecycle owner for the AstrBot host.
 
-    Event handlers live in ``adapters.astrbot_hooks``. This class only builds
+    Event handlers live in ``adapters.astrbot.hooks``. This class only builds
     services, exposes the shared plugin state, and starts/stops background work.
     """
 
@@ -73,6 +79,9 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         super().__init__(context, config)
         self.context = context
         self.cfg = config or {}
+        self.clock = time.time
+        self.hooks = AstrBotHooks(self)
+        self.attention = AttentionHooks(self)
         self.ready = False
         self.services: ServiceCollection | None = None
         self.store: Store | None = None
@@ -96,6 +105,8 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         self._lifecycle_lock = asyncio.Lock()
         self.actions = None
         self.episode_recorder = None
+        self.action_ledger = None
+        self.action_executor = None
         self.web = None
 
     async def start(self) -> None:
@@ -163,7 +174,7 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             ledger=self.store.ledger if self.store is not None else None,
             cache=self.cache,
             recall_service=recall,
-            packs=FilePersonaPacks(Path(__file__).resolve().parents[1] / "persona_seeds",
+            packs=FilePersonaPacks(Path(__file__).resolve().parents[2] / "persona_seeds",
                                    self.data_path.parent / "persona_packs"),
             dreams=self.store.dreams if self.store is not None else None,
         )
@@ -177,24 +188,33 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             self.episode_recorder = EpisodeRecorder(
                 JsonlEpisodeStore(str(self.data_path.parent / "runtime_episodes.jsonl"))
             )
+        self.action_ledger = (
+            ActionLedger(RepoActionSink(self.store.runtime_episodes))
+            if self.store is not None else None
+        )
+        self.action_executor = ActionExecutor(
+            self.actions, self.action_ledger, clock=self.clock
+        )
         recorder = AstrBotRunRecorder(
             sources=self.store.sources if self.store is not None else None,
             buffer=self.buffer,
             checkpoint=self.checkpoint,
             episodes=self.episode_recorder,
             cache=self.cache,
+            clock=self.clock,
         )
         runtime = AgentRuntime(
             state_store,
+            policy=DefaultAttentionPolicy(),
             trace=self.trace,
-            clock=time.time,
+            clock=self.clock,
             memory_context=SeekMemoryContextAdapter(self._runtime_memory_context),
             wait_seconds=(
                 int(self._c("runtime_wait_seconds", 5))
                 if bool(self._c("runtime_gate_enabled", False)) else 0
             ),
             model_gateway=AstrBotModelGateway(self.context),
-            message_sender=self.actions,
+            action_executor=self.action_executor,
             recorder=recorder,
         )
         if self.store is not None:
@@ -205,7 +225,7 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
                 )
             except Exception:
                 pass
-            self._last_runtime_prune_at = time.time()
+            self._last_runtime_prune_at = self.clock()
             self.dream = DreamCycle(
                 self.store.dreams, self._c,
                 log=lambda msg: logger.info(f"[seekmemory] {msg}"),
@@ -264,7 +284,11 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             max_attempts=lambda: int(self._c("runtime_dispatch_max_attempts", 3)),
             base_seconds=lambda: float(self._c("runtime_dispatch_backoff_seconds", 2)),
             trace=self.trace,
-            clock=time.time,
+            clock=self.clock,
+            proactive_policy=DefaultProactivePolicy(
+                enabled=bool(self._c("proactive_enabled", False))
+            ),
+            topic_source=AstrBotTopicSource(self.buffer),
         )
         background = BackgroundService(
             jobs=self.jobs,
@@ -351,7 +375,9 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
             self.graph = Graph(self.store.artifacts)
             self.hybrid_retriever = HybridRetriever(self.graph, self.cache)
             self.buffer = AstrBotBuffer(
-                str(self.data_path.parent / "pending.json"), extraction=self.store.extraction
+                str(self.data_path.parent / "pending.json"),
+                extraction=self.store.extraction,
+                clock=self.clock,
             )
             migrated = self.buffer.migrate_legacy()
             if self.buffer.load_error:
@@ -447,7 +473,8 @@ class AstrBotPlugin(AttentionHooks, AstrBotHooks):
         for name in (
             "services", "store", "cache", "tree", "graph", "hybrid_retriever",
             "buffer", "checkpoint", "dream", "jobs", "web", "actions",
-            "episode_recorder", "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
+            "episode_recorder", "action_ledger", "action_executor",
+            "tool_policy", "capacity", "run_traces", "run_tracer", "trace",
         ):
             setattr(self, name, None)
         self._self_id = ""

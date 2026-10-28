@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import tempfile
@@ -18,7 +19,14 @@ sys.path.insert(0, str(ROOT.parent))
 astrbot = types.ModuleType("astrbot")
 api = types.ModuleType("astrbot.api")
 api.logger = logging.getLogger("seekmemory-test")
-api.star = SimpleNamespace(Context=object, Star=object)
+
+
+class _HostStar:
+    def __init__(self, context, config):
+        pass
+
+
+api.star = SimpleNamespace(Context=object, Star=_HostStar)
 event = types.ModuleType("astrbot.api.event")
 event.AstrMessageEvent = object
 event.filter = SimpleNamespace(
@@ -39,8 +47,17 @@ sys.modules.update({
 
 import importlib  # noqa: E402
 AstrBotPlugin = importlib.import_module(
-    f"{ROOT.name}.adapters.astrbot_plugin"
+    f"{ROOT.name}.adapters.astrbot.plugin"
 ).AstrBotPlugin
+AstrBotHooks = importlib.import_module(
+    f"{ROOT.name}.adapters.astrbot.hooks"
+).AstrBotHooks
+AttentionHooks = importlib.import_module(
+    f"{ROOT.name}.adapters.astrbot.attention"
+).AttentionHooks
+RuntimePackage = importlib.import_module(f"{ROOT.name}.app.runtime")
+ToolPolicy = RuntimePackage.ToolPolicy
+ActionStatus = RuntimePackage.ActionStatus
 
 
 class _Sources:
@@ -54,6 +71,10 @@ class _Sources:
 
 
 class RuntimePluginContextTest(unittest.TestCase):
+    def test_plugin_uses_explicit_host_composition(self):
+        self.assertNotIn(AstrBotHooks, AstrBotPlugin.__mro__)
+        self.assertNotIn(AttentionHooks, AstrBotPlugin.__mro__)
+
     def test_make_run_context_maps_source_event_and_receipt_time(self):
         plugin = object.__new__(AstrBotPlugin)
         plugin._self_id = "bot-1"
@@ -73,15 +94,6 @@ class RuntimePluginContextTest(unittest.TestCase):
         self.assertEqual(context.bot_id, "bot-1")
         self.assertEqual(context.event_time, 10.0)
         self.assertEqual(context.received_at, 123.5)
-
-
-class _HostStar:
-    def __init__(self, context, config):
-        pass
-
-
-class _HostedPlugin(AstrBotPlugin, _HostStar):
-    """Supply the Star base that the production Main inherits from AstrBot."""
 
 
 class ConsoleLifecycleTest(unittest.IsolatedAsyncioTestCase):
@@ -105,7 +117,7 @@ class ConsoleLifecycleTest(unittest.IsolatedAsyncioTestCase):
         })
         self.web_module.start()
         self.addCleanup(self.web_module.stop)
-        self.plugin = _HostedPlugin(self.context, {
+        self.plugin = AstrBotPlugin(self.context, {
             "db_path": str(Path(self.temp.name) / "memory.db"),
         })
         self.addAsyncCleanup(self.plugin.stop)
@@ -145,6 +157,117 @@ class ConsoleLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(len(management.pack_catalog()["items"]), 0)
         self.assertEqual(management.dream_journal()["items"], [])
         self.assertEqual(len(self.context.registered_web_apis), 1)
+
+
+class HostHookActionTest(unittest.TestCase):
+    def test_schedule_proactive_delegates_to_runtime_when_enabled(self):
+        calls = []
+
+        class Runtime:
+            def schedule_proactive(self, session_id, delay, *, now):
+                calls.append((session_id, delay))
+
+        hook = AstrBotHooks()
+        hook.services = SimpleNamespace(runtime=Runtime())
+        hook._c = lambda key, default: True if key == "proactive_enabled" else default
+        hook._schedule_proactive("s1")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], "s1")
+        self.assertEqual(calls[0][1], 1800.0)
+
+    def test_send_action_audit_has_attempt_and_terminal(self):
+        class Ledger:
+            def __init__(self):
+                self.finished = []
+
+            def begin(self, request, **kwargs):
+                return SimpleNamespace(action_id="send-action")
+
+            def finish(self, record, status, **kwargs):
+                self.finished.append((record.action_id, status))
+
+        class ExtraEvent:
+            def __init__(self):
+                self.extras = {}
+
+            def get_extra(self, key, default=None):
+                return self.extras.get(key, default)
+
+            def set_extra(self, key, value):
+                self.extras[key] = value
+
+        hook = AstrBotHooks()
+        hook.action_executor = Ledger()
+        event = ExtraEvent()
+        hook._begin_send_action(event, "s1", "run-1", "turn-1")
+        self.assertIsNotNone(event.get_extra("_seekmemory_send_action"))
+        hook._finish_send_action(event, ActionStatus.SUCCEEDED)
+        self.assertEqual(hook.action_executor.finished, [("send-action", ActionStatus.SUCCEEDED)])
+
+    def test_tool_hooks_use_action_ledger_without_payload(self):
+        class Ledger:
+            def __init__(self):
+                self.started = []
+                self.finished = []
+
+            def begin(self, request, **kwargs):
+                self.started.append((request, kwargs))
+                return SimpleNamespace(action_id="action-1")
+
+            def finish(self, record, status, **kwargs):
+                self.finished.append((record.action_id, status, kwargs))
+
+        class Tracer:
+            def run_id(self, event):
+                return "run-1"
+
+            def tool_begin(self, event, tool):
+                pass
+
+            def tool_end(self, event, tool):
+                pass
+
+        class Trace:
+            def record(self, *args, **kwargs):
+                pass
+
+        class Event:
+            unified_msg_origin = "umo:1"
+            extras = {}
+
+            def get_sender_id(self):
+                return "sender-1"
+
+            def get_extra(self, key, default=None):
+                return self.extras.get(key, default)
+
+            def set_extra(self, key, value):
+                self.extras[key] = value
+
+        hook = AstrBotHooks()
+        hook.ready = True
+        hook.services = SimpleNamespace(
+            access_service=SimpleNamespace(
+                may_observe=lambda session, sender: True,
+                may_recall=lambda session, sender: True,
+            )
+        )
+        hook.run_tracer = Tracer()
+        hook.trace = Trace()
+        hook.tool_policy = ToolPolicy(("memory_",))
+        hook.action_executor = Ledger()
+        event = Event()
+        tool = SimpleNamespace(name="memory_search", id="call-1")
+        asyncio.run(hook.observe_tool(event, tool, {"query": "private"}))
+        self.assertEqual(len(hook.action_executor.started), 1)
+        self.assertNotIn("private", str(hook.action_executor.started[0]))
+        asyncio.run(
+            hook.observe_tool_result(
+                event, tool, {}, SimpleNamespace(status="ok")
+            )
+        )
+        self.assertEqual(len(hook.action_executor.finished), 1)
+        self.assertEqual(hook.action_executor.finished[0][1].value, "succeeded")
 
 
 if __name__ == "__main__":

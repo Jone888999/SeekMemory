@@ -10,8 +10,10 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.runtime import (  # noqa: E402
+    DefaultProactivePolicy,
     DueRun,
     InMemoryStateStore,
+    ProactiveDecision,
     RunContext,
     RuntimeWorker,
     Scheduler,
@@ -258,6 +260,113 @@ class RuntimeWorkerTest(unittest.TestCase):
             self.assertEqual(runtime.max_active, 1)
 
         asyncio.run(run())
+
+    def test_tick_dispatches_due_proactive_through_runtime(self) -> None:
+        class Runtime:
+            def __init__(self):
+                self.proactive = []
+
+            async def dispatch_proactive(self, context, decision, **kwargs):
+                self.proactive.append(
+                    (context.session_id, decision.reason, kwargs.get("topic"))
+                )
+                return object()
+
+        store = InMemoryStateStore()
+        state = store.get("s1")
+        state.proactive_due_at = 100.0
+        store.put(state)
+        runtime = Runtime()
+        worker = RuntimeWorker(
+            runtime=runtime,
+            scheduler=Scheduler(store),
+            enabled=lambda: True,
+            session_ids=lambda limit: ["s1"],
+            run_context=lambda session_id, now: RunContext(
+                session_id=session_id, text="hello", event_time=now
+            ),
+            interval_seconds=lambda: 1,
+            max_attempts=lambda: 3,
+            base_seconds=lambda: 2,
+            proactive_policy=DefaultProactivePolicy(enabled=True),
+        )
+        self.assertEqual(asyncio.run(worker.tick(now=100)), 1)
+        self.assertEqual(runtime.proactive, [("s1", "due", None)])
+
+    def test_tick_attaches_memory_topic_to_proactive_dispatch(self) -> None:
+        from app.runtime.topics import TopicCandidate
+
+        class Runtime:
+            def __init__(self):
+                self.topics = []
+
+            async def dispatch_proactive(self, context, decision, **kwargs):
+                self.topics.append(kwargs.get("topic"))
+                return object()
+
+        class Topics:
+            def candidates(self, session_id, *, now, limit=1):
+                return [TopicCandidate("未聊完的话题", memory_ids=("m1",))]
+
+        store = InMemoryStateStore()
+        state = store.get("s1")
+        state.proactive_due_at = 100.0
+        store.put(state)
+        runtime = Runtime()
+        worker = RuntimeWorker(
+            runtime=runtime,
+            scheduler=Scheduler(store),
+            enabled=lambda: True,
+            session_ids=lambda limit: ["s1"],
+            run_context=lambda session_id, now: RunContext(
+                session_id=session_id, text="hello", event_time=now
+            ),
+            interval_seconds=lambda: 1,
+            max_attempts=lambda: 3,
+            base_seconds=lambda: 2,
+            proactive_policy=DefaultProactivePolicy(enabled=True),
+            topic_source=Topics(),
+        )
+        self.assertEqual(asyncio.run(worker.tick(now=100)), 1)
+        self.assertEqual(runtime.topics[0].text, "未聊完的话题")
+        self.assertEqual(runtime.topics[0].memory_ids, ("m1",))
+
+    def test_tick_clears_due_proactive_when_no_memory_topic_exists(self) -> None:
+        class Runtime:
+            def __init__(self):
+                self.cleared = []
+
+            def clear_proactive(self, session_id):
+                self.cleared.append(session_id)
+
+            async def dispatch_proactive(self, *args, **kwargs):
+                raise AssertionError("must not dispatch without topic")
+
+        class Topics:
+            def candidates(self, session_id, *, now, limit=1):
+                return []
+
+        store = InMemoryStateStore()
+        state = store.get("s1")
+        state.proactive_due_at = 100.0
+        store.put(state)
+        runtime = Runtime()
+        worker = RuntimeWorker(
+            runtime=runtime,
+            scheduler=Scheduler(store),
+            enabled=lambda: True,
+            session_ids=lambda limit: ["s1"],
+            run_context=lambda session_id, now: RunContext(
+                session_id=session_id, text="hello", event_time=now
+            ),
+            interval_seconds=lambda: 1,
+            max_attempts=lambda: 3,
+            base_seconds=lambda: 2,
+            proactive_policy=DefaultProactivePolicy(enabled=True),
+            topic_source=Topics(),
+        )
+        self.assertEqual(asyncio.run(worker.tick(now=100)), 0)
+        self.assertEqual(runtime.cleared, ["s1"])
 
     def test_tick_records_scheduler_failure(self) -> None:
         class Trace:

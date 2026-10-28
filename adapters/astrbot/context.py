@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable
 
 try:
-    from ..app.runtime.contracts import MemoryContext, MemoryContextRequest
+    from ...app.runtime.contracts import MemoryContext, MemoryContextRequest
 except ImportError:
     from app.runtime.contracts import MemoryContext, MemoryContextRequest
 

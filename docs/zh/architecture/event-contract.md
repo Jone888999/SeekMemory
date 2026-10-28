@@ -1,7 +1,7 @@
 # EVENT-CONTRACT.md · 事件分层决策
 
 > 状态：**已决策（v0.4.2）**。本文记录"为什么现在不引入 HostEvent 分层"，
-> 以及什么条件下需要重新评估。权威实现：`app/runtime/contracts.py` 的 `RuntimeInput`。
+> 以及什么条件下需要重新评估。权威实现：`app/runtime/contracts/` 的 `RuntimeInput`。
 
 ## 决策
 
@@ -39,7 +39,7 @@
 2. **富内容已在 Source 层承接**：图片、语音、引用在捕获阶段转成文本占位与 media 家族，
    决策层不需要 `ContentPart`。
 3. **策略真正需要的是信号，不是事件**：关系分、相关度、热度、时间窗由
-   `app/runtime/signals.py` 表达，可被 attention / proactive / recall 三处复用。
+   `RuntimeInput` 的通用字段和宿主传入的可选信号表达，策略不应依赖平台名称。
 4. **并行开发的边界**：#114/#116/#117 正在改 `contracts.py` 与适配器；新增一层会扩大冲突面。
 
 ## 演进触发条件（满足任意一条再引入 HostEvent）

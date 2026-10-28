@@ -1,29 +1,19 @@
-"""端到端策略测试：宿主事件 → RuntimeInput → 决策。
-
-用假的 AstrBot 事件对象走真实映射函数（adapters/astrbot_event.py），
-验证"该不该回"整条链路，不依赖宿主运行时。这是 #123 验收的一部分；
-#116 合入后同一套夹具可换成真宿主边界。
-"""
+"""Host event -> RuntimeInput -> default attention decision."""
 
 from __future__ import annotations
 
 import os
 import sys
+import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import unittest
-
-from adapters.astrbot_event import to_runtime_input
-from app.runtime.attention import AttentionPolicy, thresholds_from_config
+from adapters.astrbot.events import to_runtime_input
+from app.runtime.attention import DefaultAttentionPolicy
 from app.runtime.contracts import SessionState, WakeAction
-from app.runtime.scene_hints import compose
-from app.runtime.signals import Signals
 
 
 class FakeAstrBotEvent:
-    """最小 AstrBot 事件表面：只提供映射需要的字段。"""
-
     def __init__(self, **kw) -> None:
         self.message_str = kw.get("text", "")
         self.is_at_or_wake_command = kw.get("mentioned", False)
@@ -48,23 +38,30 @@ OWNER = "owner-1"
 
 class EndToEndPolicyTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.policy = AttentionPolicy()
+        self.policy = DefaultAttentionPolicy()
 
-    def decide(self, event: FakeAstrBotEvent, signals: Signals | None = None,
-               state: SessionState | None = None, now: float = 1000.0):
-        mapped = to_runtime_input(event, session_id=event.unified_msg_origin, owner_id=OWNER)
-        return mapped, self.policy.decide(mapped, state or SessionState("s"), signals or Signals(), now)
+    def decide(self, event: FakeAstrBotEvent, state: SessionState | None = None):
+        mapped = to_runtime_input(
+            event, session_id=event.unified_msg_origin, owner_id=OWNER
+        )
+        return mapped, self.policy.evaluate(
+            mapped, state or SessionState("s"), 1000.0
+        )
 
     def test_private_message_maps_and_replies(self) -> None:
         mapped, decision = self.decide(
-            FakeAstrBotEvent(text="在吗", private=True, umo="napcat:FriendMessage:owner-1")
+            FakeAstrBotEvent(
+                text="在吗", private=True, umo="napcat:FriendMessage:owner-1"
+            )
         )
         self.assertEqual(mapped.scene, "private")
         self.assertIs(decision.action, WakeAction.REPLY)
         self.assertEqual(decision.reason, "private_message")
 
-    def test_group_mention_replies(self) -> None:
-        mapped, decision = self.decide(FakeAstrBotEvent(text="大肥鱼在吗", mentioned=True))
+    def test_group_mention_maps_to_direct_attention(self) -> None:
+        mapped, decision = self.decide(
+            FakeAstrBotEvent(text="大肥鱼在吗", mentioned=True)
+        )
         self.assertEqual(mapped.scene, "group")
         self.assertTrue(mapped.addressed)
         self.assertIs(decision.action, WakeAction.REPLY)
@@ -79,20 +76,21 @@ class EndToEndPolicyTest(unittest.TestCase):
         self.assertIs(decision.action, WakeAction.REPLY)
         self.assertEqual(decision.reason, "owner")
 
-    def test_stranger_in_group_stays_quiet(self) -> None:
+    def test_unaddressed_group_message_observes(self) -> None:
         mapped, decision = self.decide(
-            FakeAstrBotEvent(text="大家好", sender_id="88888"),
-            signals=Signals(heat=0.1),
+            FakeAstrBotEvent(text="大家好", sender_id="88888")
         )
         self.assertEqual(mapped.role, "member")
         self.assertIs(decision.action, WakeAction.OBSERVE)
         self.assertEqual(decision.reason, "ambient_message")
 
-    def test_comment_scene_keeps_thread(self) -> None:
+    def test_comment_thread_is_preserved_without_platform_branching(self) -> None:
         mapped, decision = self.decide(
             FakeAstrBotEvent(
-                text="这条视频不错", private=False, scene="comment",
-                thread_id="thread-9", umo="bilibili:Comment:thread-9",
+                text="这条视频不错",
+                scene="comment",
+                thread_id="thread-9",
+                umo="bilibili:Comment:thread-9",
             )
         )
         self.assertEqual(mapped.scene, "comment")
@@ -102,40 +100,15 @@ class EndToEndPolicyTest(unittest.TestCase):
     def test_name_call_counts_as_addressed(self) -> None:
         event = FakeAstrBotEvent(text="大肥鱼你在干嘛", sender_id="user-1")
         mapped = to_runtime_input(
-            event, session_id=event.unified_msg_origin, owner_id=OWNER,
+            event,
+            session_id=event.unified_msg_origin,
+            owner_id=OWNER,
             names=("大肥鱼",),
         )
         self.assertTrue(mapped.addressed)
-        decision = self.policy.decide(mapped, SessionState("s"), Signals(), 1000.0)
+        decision = self.policy.evaluate(mapped, SessionState("s"), 1000.0)
         self.assertIs(decision.action, WakeAction.REPLY)
-        self.assertEqual(decision.reason, "addressed")
-
-    def test_off_quota_still_replies_when_addressed(self) -> None:
-        from app.runtime.attention import AttentionThresholds
-
-        policy = AttentionPolicy(AttentionThresholds(
-            stranger_quota_base=0, stranger_quota_familiar=0, stranger_quota_close=0,
-        ))
-        mapped = to_runtime_input(
-            FakeAstrBotEvent(text="大肥鱼在吗", mentioned=True),
-            session_id="napcat:GroupMessage:7001", owner_id=OWNER,
-        )
-        decision = policy.decide(mapped, SessionState("s"), Signals(), 1000.0)
-        self.assertIs(decision.action, WakeAction.REPLY)
-        self.assertTrue(decision.must_reply)
-
-    def test_scene_hint_renders_for_mapped_event(self) -> None:
-        event = FakeAstrBotEvent(text="我回来啦", sender_id=OWNER)
-        mapped = to_runtime_input(event, session_id=event.unified_msg_origin, owner_id=OWNER)
-        text = compose(mapped, Signals(relationship=0.8), 21)
-        self.assertIn("主人", text)
-        self.assertIn("晚上", text)
-
-    def test_thresholds_from_config_round_trip(self) -> None:
-        conf = lambda key, default: '{"relevance_reply": 0.6, "stranger_quota_close": 6}' if key == "attention_thresholds" else default
-        thresholds = thresholds_from_config(conf)
-        self.assertAlmostEqual(thresholds.relevance_reply, 0.6)
-        self.assertEqual(thresholds.stranger_quota_close, 6)
+        self.assertEqual(decision.reason, "direct_attention")
 
 
 if __name__ == "__main__":

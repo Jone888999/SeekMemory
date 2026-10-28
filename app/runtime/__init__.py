@@ -8,6 +8,7 @@ from .contracts import (
     ActionResult,
     ActionSink,
     ActionStatus,
+    AttentionDecision,
     AttentionLevel,
     Clock,
     MemoryContext,
@@ -39,21 +40,42 @@ from .episode import (
     normalize_tool_calls,
     safe_error_code,
 )
+from .actions import (
+    ActionExecutor,
+    ActionLedger,
+    ActionMessageSender,
+    RepoActionSink,
+    action_idempotency_key,
+)
+from .attention import DefaultAttentionPolicy
 from .recorder import RecordedReply, RecordedTurn, RunRecorder
+from .proactive import (
+    DefaultProactivePolicy,
+    ProactiveCandidate,
+    ProactiveDispatchPlan,
+    plan_proactive_dispatch,
+)
 from .runtime import AgentRuntime
 from .scheduler import DueRun, Scheduler, TimingPolicy
-from .state import RepoStateStore, InMemoryStateStore, JsonStateStore
+from .state import (
+    InMemoryStateStore,
+    JsonStateStore,
+    RepoStateStore,
+)
+from .topics import TopicCandidate, TopicSource
 from .tools import (
     ToolCall,
     ToolGuardDecision,
     ToolPolicy,
     tool_result_failed,
 )
-from .wake import WakePolicy
 from .worker import RuntimeWorker
 
 __all__ = [
     "ActionKind",
+    "ActionExecutor",
+    "ActionLedger",
+    "ActionMessageSender",
     "ActionPort",
     "ActionRecord",
     "ActionRequest",
@@ -61,9 +83,15 @@ __all__ = [
     "ActionSink",
     "ActionStatus",
     "AgentRuntime",
+    "AttentionDecision",
     "AttentionLevel",
     "Clock",
+    "DefaultAttentionPolicy",
+    "DefaultProactivePolicy",
+    "ProactiveCandidate",
+    "ProactiveDispatchPlan",
     "RepoEpisodeStore",
+    "RepoActionSink",
     "RepoStateStore",
     "EpisodeOutcome",
     "EpisodeRecorder",
@@ -94,13 +122,16 @@ __all__ = [
     "DueRun",
     "Scheduler",
     "TimingPolicy",
+    "TopicCandidate",
+    "TopicSource",
     "TraceSink",
     "RunDecision",
     "WakeAction",
-    "WakePolicy",
     "delivery_failure_metadata",
     "delivery_failure_outcome",
     "episode_outcome",
+    "action_idempotency_key",
+    "plan_proactive_dispatch",
     "normalize_tool_calls",
     "safe_error_code",
     "tool_result_failed",

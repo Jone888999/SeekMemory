@@ -99,7 +99,7 @@ class MainOwnershipTest(unittest.TestCase):
         ))
 
     def test_start_jobs_remains_the_astrbot_loaded_hook(self) -> None:
-        hooks = (ROOT / "adapters" / "astrbot_hooks.py").read_text(
+        hooks = (ROOT / "adapters" / "astrbot" / "hooks.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('"start_jobs": _register(', hooks)
@@ -164,6 +164,17 @@ class LayerDependencyTest(unittest.TestCase):
     def test_runtime_does_not_import_astrbot(self) -> None:
         imports = self._imports(ROOT / "app" / "runtime")
         self.assertFalse([item for item in imports if item.startswith("astrbot")])
+
+    def test_astrbot_event_and_attention_use_injected_clock(self) -> None:
+        for name in ("events.py", "attention.py"):
+            source = (ROOT / "adapters" / "astrbot" / name).read_text(
+                encoding="utf-8"
+            )
+            self.assertNotIn("time.time(", source)
+
+    def test_webui_stays_host_neutral(self) -> None:
+        for path in (ROOT / "webui").glob("*.py"):
+            self.assertNotIn("astrbot", path.read_text(encoding="utf-8").lower())
 
     def test_store_composition_is_only_repository_bundle(self) -> None:
         source = (ROOT / "store" / "__init__.py").read_text(encoding="utf-8")

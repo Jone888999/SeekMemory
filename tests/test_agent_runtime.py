@@ -14,16 +14,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.runtime import (  # noqa: E402
     AgentRuntime,
-    AttentionLevel,
     InMemoryStateStore,
     JsonStateStore,
     MemoryContext,
     MemoryContextRequest,
+    ProactiveDecision,
     RunContext,
+    TopicCandidate,
     RuntimeInput,
     SessionState,
     WakeAction,
-    WakePolicy,
+    DefaultAttentionPolicy,
 )
 
 
@@ -35,9 +36,9 @@ class Trace:
         self.rows.append((kind, status, context or {}))
 
 
-class WakePolicyTest(unittest.TestCase):
+class DefaultAttentionPolicyTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.policy = WakePolicy()
+        self.policy = DefaultAttentionPolicy()
         self.state = SessionState(session_id="s1")
 
     def test_empty_text_is_ignored(self) -> None:
@@ -46,102 +47,52 @@ class WakePolicyTest(unittest.TestCase):
             WakeAction.IGNORE,
         )
 
-    def test_direct_attention_replies(self) -> None:
+    def test_owner_always_replies(self) -> None:
         decision = self.policy.evaluate(
-            RuntimeInput("s1", "hello", mentioned=True), self.state, 10
+            RuntimeInput("s1", "ambient", role="owner"), self.state, 10
         )
         self.assertEqual(decision.action, WakeAction.REPLY)
-        self.assertEqual(decision.reason, "direct_attention")
+        self.assertEqual(decision.reason, "owner")
 
-    def test_question_replies_without_mention(self) -> None:
-        self.assertEqual(
-            self.policy.evaluate(
-                RuntimeInput("s1", "what time?", question=True), self.state, 10
-            ).action,
-            WakeAction.REPLY,
-        )
-
-    def test_cooldown_ignores_ambient_message(self) -> None:
-        self.state.last_spoke_at = 100
-        self.state.reply_cooldown_seconds = 30
-        decision = self.policy.evaluate(RuntimeInput("s1", "ambient", event_time=110), self.state, 110)
-        self.assertEqual(decision.action, WakeAction.IGNORE)
-        self.assertEqual(decision.reason, "reply_cooldown")
-
-    def test_quiet_window_does_not_ignore_direct_attention(self) -> None:
-        self.state.quiet_until = 200
+    def test_private_always_replies(self) -> None:
         decision = self.policy.evaluate(
-            RuntimeInput("s1", "hello", mentioned=True, event_time=150), self.state, 150
-        )
-        self.assertEqual(decision.action, WakeAction.REPLY)
-        self.assertEqual(decision.reason, "direct_attention")
-
-    def test_private_always_replies_even_during_wait(self) -> None:
-        self.state.wait_until = 200
-        decision = self.policy.evaluate(
-            RuntimeInput("s1", "hello", private=True, event_time=150), self.state, 150
+            RuntimeInput("s1", "hello", private=True), self.state, 10
         )
         self.assertEqual(decision.action, WakeAction.REPLY)
         self.assertEqual(decision.reason, "private_message")
         self.assertTrue(decision.must_reply)
 
-    def test_group_ambient_waits_and_direct_breaks_wait(self) -> None:
-        self.state.wait_until = 200
-        ambient = self.policy.evaluate(RuntimeInput("s1", "ambient", event_time=150), self.state, 150)
-        direct = self.policy.evaluate(
-            RuntimeInput("s1", "hello", private=False, mentioned=True, event_time=150),
-            self.state,
-            150,
-        )
-        self.assertEqual(ambient.action, WakeAction.WAIT)
-        self.assertEqual(direct.action, WakeAction.REPLY)
-
-    def test_addressed_question_breaks_wait(self) -> None:
-        self.state.wait_until = 200
+    def test_direct_attention_replies_and_sets_followup(self) -> None:
         decision = self.policy.evaluate(
-            RuntimeInput("s1", "what happened?", question=True, event_time=150),
+            RuntimeInput("s1", "hello", speaker_id="u1", mentioned=True),
             self.state,
-            150,
-        )
-        self.assertEqual(decision.action, WakeAction.REPLY)
-        self.assertEqual(decision.attention, AttentionLevel.ADDRESSED)
-
-    def test_direct_attention_breaks_wait(self) -> None:
-        self.state.wait_until = 200
-        decision = self.policy.evaluate(
-            RuntimeInput("s1", "hello", mentioned=True, event_time=150), self.state, 150
+            10,
         )
         self.assertEqual(decision.action, WakeAction.REPLY)
         self.assertEqual(decision.reason, "direct_attention")
+        self.assertEqual(decision.followup_speaker_id, "u1")
+        self.assertEqual(decision.followup_remaining, 3)
 
-    def test_wake_policy_uses_now_not_event_time_for_windows(self) -> None:
-        self.state.quiet_until = 150
-        decision = self.policy.evaluate(
-            RuntimeInput("s1", "ambient", event_time=100), self.state, 200
+    def test_followup_is_per_speaker(self) -> None:
+        self.state.followup_by_speaker["u1"] = 2
+        first = self.policy.evaluate(
+            RuntimeInput("s1", "follow up", speaker_id="u1"), self.state, 10
         )
-        self.assertEqual(decision.action, WakeAction.OBSERVE)
-        self.assertEqual(decision.reason, "ambient_message")
-
-    def test_wait_expires_at_exact_deadline(self) -> None:
-        self.state.wait_until = 200
-        decision = self.policy.evaluate(
-            RuntimeInput("s1", "hello", mentioned=True, event_time=200), self.state, 200
+        other = self.policy.evaluate(
+            RuntimeInput("s1", "other", speaker_id="u2"), self.state, 10
         )
-        self.assertEqual(decision.action, WakeAction.REPLY)
-
-    def test_cooldown_expires_at_exact_deadline(self) -> None:
-        self.state.cooldown_until = 130
-        decision = self.policy.evaluate(
-            RuntimeInput("s1", "ambient", event_time=130), self.state, 130
-        )
-        self.assertEqual(decision.action, WakeAction.OBSERVE)
+        self.assertEqual(first.action, WakeAction.REPLY)
+        self.assertEqual(first.reason, "followup")
+        self.assertEqual(first.followup_remaining, 1)
+        self.assertEqual(other.action, WakeAction.OBSERVE)
 
     def test_ambient_message_observes(self) -> None:
         self.assertEqual(
-            self.policy.evaluate(RuntimeInput("s1", "ambient", event_time=10), self.state, 10).action,
+            self.policy.evaluate(
+                RuntimeInput("s1", "ambient", speaker_id="u1"), self.state, 10
+            ).action,
             WakeAction.OBSERVE,
         )
-
 
     def test_observe_updates_state_and_trace(self) -> None:
         store = InMemoryStateStore()
@@ -221,52 +172,17 @@ class WakePolicyTest(unittest.TestCase):
         self.assertEqual(len(stale), 1)
         self.assertNotIn("old", str(stale[0]))
 
-    def test_runtime_cooldown_uses_real_timestamps(self) -> None:
+    def test_mark_delivered_records_last_spoke_and_policy_stays_observe(self) -> None:
         store = InMemoryStateStore()
         runtime = AgentRuntime(store, clock=lambda: 100)
         runtime.observe(
             RuntimeInput("s1", "hello", event_time=100, mentioned=True), now=100
         )
         runtime.mark_delivered("s1", now=100)
-        self.assertEqual(store.get("s1").cooldown_until, 130)
+        self.assertEqual(store.get("s1").last_spoke_at, 100)
         self.assertEqual(
             runtime.observe(
                 RuntimeInput("s1", "ambient", event_time=110), now=110
-            ).action,
-            WakeAction.IGNORE,
-        )
-        self.assertEqual(
-            runtime.observe(
-                RuntimeInput("s1", "ambient", event_time=140), now=140
-            ).action,
-            WakeAction.OBSERVE,
-        )
-
-    def test_runtime_quiet_and_wait_transitions(self) -> None:
-        store = InMemoryStateStore()
-        runtime = AgentRuntime(store, clock=lambda: 100)
-        state = store.get("s1")
-        state.quiet_until = 130
-        store.put(state)
-        self.assertEqual(
-            runtime.observe(
-                RuntimeInput("s1", "hello", event_time=110), now=110
-            ).action,
-            WakeAction.IGNORE,
-        )
-        state = store.get("s1")
-        state.quiet_until = 0.0
-        state.wait_until = 170
-        store.put(state)
-        self.assertEqual(
-            runtime.observe(
-                RuntimeInput("s1", "ambient", event_time=150), now=150
-            ).action,
-            WakeAction.WAIT,
-        )
-        self.assertEqual(
-            runtime.observe(
-                RuntimeInput("s1", "ambient", event_time=180), now=180
             ).action,
             WakeAction.OBSERVE,
         )
@@ -309,6 +225,19 @@ class WakePolicyTest(unittest.TestCase):
         runtime.observe(RuntimeInput("s1", "second", event_time=102), now=102)
         self.assertEqual(store.get("s1").wait_until, 107)
 
+    def test_schedule_proactive_arms_due_time_and_resets_attempts(self) -> None:
+        store = InMemoryStateStore()
+        state = store.get("s1")
+        state.proactive_attempts = 4
+        store.put(state)
+        runtime = AgentRuntime(store, clock=lambda: 100)
+
+        scheduled = runtime.schedule_proactive("s1", 30, now=100)
+
+        self.assertEqual(scheduled.proactive_due_at, 130.0)
+        self.assertEqual(scheduled.proactive_attempts, 0)
+        self.assertEqual(store.get("s1").proactive_due_at, 130.0)
+
     def test_delivery_clears_unread_and_updates_last_spoke(self) -> None:
         store = InMemoryStateStore()
         runtime = AgentRuntime(store, clock=lambda: 200)
@@ -340,18 +269,14 @@ class WakePolicyTest(unittest.TestCase):
         state.last_event_at = 11.0
         state.proactive_due_at = 22.0
         state.proactive_attempts = 2
-        state.last_action_at = 33.0
-        state.last_action_kind = "host_action"
-        state.last_action_status = "succeeded"
+        state.followup_by_speaker = {"u1": 3}
         first.put(state)
 
         loaded = JsonStateStore(path).get("s1")
         self.assertEqual(loaded.last_event_at, 11.0)
         self.assertEqual(loaded.proactive_due_at, 22.0)
         self.assertEqual(loaded.proactive_attempts, 2)
-        self.assertEqual(loaded.last_action_at, 33.0)
-        self.assertEqual(loaded.last_action_kind, "host_action")
-        self.assertEqual(loaded.last_action_status, "succeeded")
+        self.assertEqual(loaded.followup_by_speaker, {"u1": 3})
 
     def test_runtime_surface_has_no_test_only_mutators(self) -> None:
         for name in ("quiet", "wait", "mark_read"):
@@ -384,10 +309,9 @@ class WakePolicyTest(unittest.TestCase):
         self.assertEqual(state.quiet_until, 123)
         self.assertEqual(state.wait_until, 0.0)
         self.assertEqual(state.next_retry_at, 0.0)
-        self.assertEqual(state.reply_cooldown_seconds, 30.0)
         self.assertEqual(state.proactive_due_at, 0.0)
         self.assertEqual(state.proactive_attempts, 0)
-        self.assertEqual(state.last_action_status, "")
+        self.assertEqual(state.followup_by_speaker, {})
         runtime = AgentRuntime(store, clock=lambda: 200)
         runtime.observe(RuntimeInput("s1", "ambient", event_time=200), now=200)
         runtime.mark_delivered("s1", now=200)
@@ -557,6 +481,59 @@ class WakePolicyTest(unittest.TestCase):
         self.assertEqual(state.unread_count, 1)
         self.assertGreater(state.wait_until, 100)
         self.assertEqual(state.next_retry_at, state.wait_until)
+
+    def test_proactive_dispatch_generates_sends_and_advances_state(self) -> None:
+        class Model:
+            def __init__(self):
+                self.prompts = []
+
+            async def complete(self, session_id, prompt, system_prompt=None):
+                self.prompts.append(prompt)
+                return "proactive reply"
+
+        class Sender:
+            async def send(self, session_id, text):
+                return True
+
+        class Recorder:
+            def new_run_id(self):
+                return "proactive-run"
+
+            def record_deferred_reply(self, **kwargs):
+                self.reply = kwargs
+                return SimpleNamespace(response_chars=16, assistant_source_id="assistant-1")
+
+            def record_deferred_error(self, **kwargs):
+                raise AssertionError("must not fail")
+
+        store = InMemoryStateStore()
+        state = store.get("s1")
+        state.proactive_due_at = 100.0
+        store.put(state)
+        recorder = Recorder()
+        model = Model()
+        runtime = AgentRuntime(
+            store,
+            clock=lambda: 100,
+            model_gateway=model,
+            message_sender=Sender(),
+            recorder=recorder,
+        )
+        result = asyncio.run(
+            runtime.dispatch_proactive(
+                RunContext("s1", "memory prompt", event_time=90, received_at=100),
+                ProactiveDecision(True, "due"),
+                topic=TopicCandidate("昨天聊到一半的事", kind="unfinished_topic"),
+                now=100,
+            )
+        )
+        self.assertTrue(result.delivered)
+        self.assertEqual(recorder.reply["decision"], "proactive")
+        self.assertIn("主动由头", model.prompts[0])
+        state = store.get("s1")
+        self.assertEqual(state.proactive_attempts, 1)
+        self.assertEqual(state.proactive_due_at, 0.0)
+        self.assertEqual(state.last_action, "reply")
 
     def test_deferred_dispatch_rejects_not_due_state(self) -> None:
         class Model:

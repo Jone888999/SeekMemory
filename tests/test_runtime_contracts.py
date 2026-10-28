@@ -47,7 +47,7 @@ class RuntimeContractsTest(unittest.TestCase):
         state = SessionState(session_id="s1")
         self.assertEqual(state.proactive_due_at, 0.0)
         self.assertEqual(state.proactive_attempts, 0)
-        self.assertEqual(state.last_action_status, "")
+        self.assertEqual(state.followup_by_speaker, {})
 
     def test_proactive_decision_and_memory_request_are_host_neutral(self) -> None:
         decision = ProactiveDecision(should_speak=True, reason="due", due_at=20.0)

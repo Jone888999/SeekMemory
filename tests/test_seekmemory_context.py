@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from adapters.seekmemory_context import SeekMemoryContextAdapter  # noqa: E402
+from adapters.astrbot.context import SeekMemoryContextAdapter  # noqa: E402
 from app.runtime import (  # noqa: E402
     AgentRuntime,
     InMemoryStateStore,
@@ -64,7 +64,7 @@ class SeekMemoryContextAdapterTest(unittest.TestCase):
 
     def test_adapter_imports_from_plugin_package_and_top_level(self) -> None:
         top_level = (
-            "from adapters.seekmemory_context import SeekMemoryContextAdapter; "
+            "from adapters.astrbot.context import SeekMemoryContextAdapter; "
             "from app.runtime import MemoryContext; "
             "assert SeekMemoryContextAdapter(lambda request: MemoryContext("
             "text='x', info={'final_ids': ('1',)})).build_context(None).info"
@@ -73,7 +73,7 @@ class SeekMemoryContextAdapterTest(unittest.TestCase):
         package = (
             "from importlib import import_module; "
             "SeekMemoryContextAdapter = "
-            f"import_module({ROOT.name!r} + '.adapters.seekmemory_context').SeekMemoryContextAdapter; "
+            f"import_module({ROOT.name!r} + '.adapters.astrbot.context').SeekMemoryContextAdapter; "
             f"MemoryContext = import_module({ROOT.name!r} + '.app.runtime').MemoryContext; "
             "assert SeekMemoryContextAdapter(lambda request: MemoryContext("
             "text='x', info={'final_ids': ('1',)})).build_context(None).info"
@@ -156,8 +156,10 @@ runtime_module = importlib.import_module(f"{root.name}.app.runtime")
 tracing_module = importlib.import_module(f"{root.name}.app.runtime.tracing")
 trace_store_module = importlib.import_module(f"{root.name}.store.run_trace")
 adapter_module = importlib.import_module(
-    f"{root.name}.adapters.seekmemory_context"
+    f"{root.name}.adapters.astrbot.context"
 )
+hooks_module = importlib.import_module(f"{root.name}.adapters.astrbot.hooks")
+attention_module = importlib.import_module(f"{root.name}.adapters.astrbot.attention")
 journal_module = importlib.import_module(f"{root.name}.webui.journal")
 
 
@@ -192,6 +194,8 @@ class FakeCapacity:
 class FakeMain(main_module.Main):
     def __init__(self, data_dir):
         self.ready = True
+        self.hooks = hooks_module.AstrBotHooks(self)
+        self.attention = attention_module.AttentionHooks(self)
         self.capacity_service = FakeCapacity()
         self.cache = object()
         self.data_path = Path(data_dir) / "memory.db"
@@ -210,6 +214,10 @@ class FakeMain(main_module.Main):
         self.services = SimpleNamespace(
             runtime=self.runtime,
             capacity_service=self.capacity_service,
+            access_service=SimpleNamespace(
+                may_recall=lambda session, sender: True,
+                may_observe=lambda session, sender: True,
+            ),
         )
 
     def _may_recall(self, event):

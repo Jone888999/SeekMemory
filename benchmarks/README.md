@@ -10,6 +10,14 @@ python3 benchmarks/run.py          # 生成 benchmarks/results/latest.md
 
 不需要网络、不需要 AstrBot、不需要模型。固定数据，**每次结果一致**。
 
+## Runtime load/soak
+
+```bash
+python3 benchmarks/runtime_load.py
+```
+
+固定时钟跨一小时模拟 1,000 个会话和 10,000 条事件；运行生产 `AgentRuntime` 决策、`RuntimeWorker` 并发/去重路径、主动策略有界 fan-out，以及 SQLite action ledger 的重复回调、重启和保留清理。模型和发送端都使用 fake port，不访问网络或模型。脚本验证队列深度、派发上限、重复回调去重、唯一终态和并发上限，并输出 p50/p95 决策延迟、派发计数、去重计数和峰值内存。耗时和内存值受运行机器影响，计数断言保持确定。
+
 ## 数据
 
 `dataset.py` 手写 19 条事件，覆盖：

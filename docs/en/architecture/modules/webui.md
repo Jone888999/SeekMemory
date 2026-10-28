@@ -2,7 +2,7 @@
 
 ## Layers
 
-- webui/routes.py registers AstrBot plugin routes and handles authentication, method/body limits, status mapping, and service calls.
+- `webui/` keeps host-neutral jobs, journal, and trace primitives; AstrBot management routes live in `adapters/astrbot/web.py`, where the adapter owns authentication, method/body limits, and status mapping.
 - services/management_service.py implements framework-independent catalog, detail, edit, persona bootstrap/rollback, and recall-diagnostic use cases.
 - dashboard/ is the React/TypeScript management interface, organized around memory library, control/diagnostics/logs/run traces/persona evidence workspaces.
 - The AstrBot page bridge sends authenticated host requests to the plugin API; a static page and development mock do not connect to the real database.

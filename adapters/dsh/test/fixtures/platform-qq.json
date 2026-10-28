@@ -1,0 +1,5 @@
+{
+  "session": {"id":"qq:group:12345","meta":{"scene":"group","private":false,"conversation_id":"12345","self_id":"bot","role":"member","subject_key":"user:alice"}},
+  "event": {"type":"user/message","time":1000,"data":{"id":"msg-1","content":[{"type":"text","text":"大家好"}],"speakerId":"10001","mentioned":false,"addressed":true,"reply_to_me":false}},
+  "received_at": 1001
+}

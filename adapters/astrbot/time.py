@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import datetime
-import time
 from dataclasses import replace
-from typing import Any
+from typing import Any, Callable
 
 try:
-    from ..app.contracts import DialogueTurn
-    from ..app.ports import SourceStore
-    from ..app.runtime.recorder import RecordedReply, RecordedTurn, RunRecorder
-    from ..core.source import Source
-    from ..perceive.buffer import Buffer
+    from ...app.contracts import DialogueTurn
+    from ...app.ports import SourceStore
+    from ...app.runtime.recorder import RecordedReply, RecordedTurn, RunRecorder
+    from ...core.source import Source
+    from ...perceive.buffer import Buffer
 except ImportError:  # standalone adapter imports in scripts/tests
     from app.contracts import DialogueTurn
     from app.ports import SourceStore
@@ -23,7 +22,13 @@ except ImportError:  # standalone adapter imports in scripts/tests
 UTC8 = datetime.timezone(datetime.timedelta(hours=8))
 
 
-def utc8_time_hook(at: str = "", *, now: bool = False, projection: bool = False) -> str:
+def utc8_time_hook(
+    at: str = "",
+    *,
+    now: bool = False,
+    projection: bool = False,
+    clock: Callable[[], float] | None = None,
+) -> str:
     """Convert known instants; preserve legacy values with no timezone.
 
     New writes keep the UTC+8 offset. Kernel views keep their existing naive
@@ -32,7 +37,9 @@ def utc8_time_hook(at: str = "", *, now: bool = False, projection: bool = False)
     if not at:
         if not now:
             return at
-        value = datetime.datetime.now(UTC8)
+        if clock is None:
+            raise ValueError("clock is required when now=True")
+        value = datetime.datetime.fromtimestamp(float(clock()), UTC8)
     else:
         try:
             value = datetime.datetime.fromisoformat(at.replace("Z", "+00:00"))
@@ -86,24 +93,39 @@ class AstrBotSourceView:
 class AstrBotRunRecorder(RunRecorder):
     """Normalize at the host boundary, then reuse every existing write path."""
 
+    def __init__(self, *args, clock: Callable[[], float] | None = None, **kwargs) -> None:
+        self.host_clock = clock or (lambda: 0.0)
+        super().__init__(*args, clock=clock, **kwargs)
+
     def record_user(self, *, at: str = "", **fields: Any) -> RecordedTurn:
-        return super().record_user(at=utc8_time_hook(at, now=True), **fields)
+        return super().record_user(
+            at=utc8_time_hook(at, now=True, clock=self.host_clock), **fields
+        )
 
     def record_reply(self, *, at: str = "", **fields: Any) -> RecordedReply:
-        return super().record_reply(at=utc8_time_hook(at, now=True), **fields)
+        return super().record_reply(
+            at=utc8_time_hook(at, now=True, clock=self.host_clock), **fields
+        )
 
     def record_delivery(self, *, at: str = "", **fields: Any) -> None:
-        super().record_delivery(at=utc8_time_hook(at, now=True), **fields)
+        super().record_delivery(
+            at=utc8_time_hook(at, now=True, clock=self.host_clock), **fields
+        )
 
     def record_error(self, *, at: str = "", **fields: Any) -> None:
-        super().record_error(at=utc8_time_hook(at, now=True), **fields)
+        super().record_error(
+            at=utc8_time_hook(at, now=True, clock=self.host_clock), **fields
+        )
 
 
 class AstrBotBuffer(Buffer):
     """Use UTC+8 views and age signals without changing the kernel Buffer."""
 
-    def __init__(self, path: str = "", extraction=None) -> None:
+    def __init__(
+        self, path: str = "", extraction=None, clock: Callable[[], float] | None = None
+    ) -> None:
         self._source_times: dict[str, float] = {}
+        self.clock = clock or (lambda: 0.0)
         super().__init__(path, extraction=extraction)
 
     @staticmethod
@@ -114,7 +136,11 @@ class AstrBotBuffer(Buffer):
         self, umo: str, text: str, sender: str = "", source_id: str = "",
         at: str = "", *, source: Source | None = None, **fields: Any,
     ) -> DialogueTurn | None:
-        at = utc8_time_hook(at or (source.at if source is not None else ""), now=True)
+        at = utc8_time_hook(
+            at or (source.at if source is not None else ""),
+            now=True,
+            clock=self.clock,
+        )
         turn = super().add(
             umo, text, sender, source_id, at,
             source=source, **fields,
@@ -156,4 +182,4 @@ class AstrBotBuffer(Buffer):
 
     def oldest_topic_age(self) -> float:
         stamps = self._timestamps()
-        return max(0.0, time.time() - min(stamps)) if stamps else 0.0
+        return max(0.0, self.clock() - min(stamps)) if stamps else 0.0

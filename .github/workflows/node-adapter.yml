@@ -25,6 +25,11 @@ jobs:
         with:
           node-version: "22.16.0"
 
+      - uses: actions/setup-python@v5
+        if: steps.detect.outputs.present == 'true'
+        with:
+          python-version: "3.12"
+
       - name: Verify Node version
         if: steps.detect.outputs.present == 'true'
         run: node --version

@@ -10,8 +10,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from adapters.astrbot_actions import AstrBotActionPort  # noqa: E402
-from adapters.astrbot_model import AstrBotModelGateway  # noqa: E402
+from adapters.astrbot.actions import AstrBotActionPort  # noqa: E402
+from adapters.astrbot.model import AstrBotModelGateway  # noqa: E402
 from app.runtime import ActionKind, ActionRequest, ActionResult  # noqa: E402
 
 

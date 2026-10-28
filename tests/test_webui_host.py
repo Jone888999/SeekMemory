@@ -21,6 +21,10 @@ sys.path.insert(0, str(ROOT.parent))
 sys.path.insert(0, str(ROOT / "tests"))
 from contract_support import validate_contract  # noqa: E402
 
+RuntimePackage = importlib.import_module(f"{ROOT.name}.app.runtime")
+ActionExecutor = RuntimePackage.ActionExecutor
+ActionResult = RuntimePackage.ActionResult
+
 try:
     from starlette.requests import Request
 
@@ -30,6 +34,18 @@ except ImportError:
     Main = None
 else:
     Main = importlib.import_module(f"{ROOT.name}.main").Main
+
+
+def action_executor_for(sender) -> ActionExecutor:
+    class Port:
+        async def execute(self, request):
+            result = await sender.send(request.session_id, request.text)
+            return ActionResult(
+                result is not False,
+                "" if result is not False else "host_send_failed",
+            )
+
+    return ActionExecutor(Port(), None)
 
 
 class HostContext:
@@ -204,7 +220,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.plugin.services.runtime, runtime)
         self.assertIs(self.plugin.services.runtime_worker, worker)
         self.assertIs(worker.runtime, runtime)
-        self.assertIs(runtime.message_sender, self.plugin.actions)
+        self.assertIs(runtime.action_executor, self.plugin.action_executor)
         tasks = list(self.plugin.services.background_service.tasks)
         await asyncio.gather(self.plugin.terminate(), self.plugin.terminate())
         self.assertTrue(all(task.done() for task in tasks))
@@ -237,7 +253,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_engine_failure_after_open_does_not_leave_a_live_partial_engine(self) -> None:
         await self.plugin.terminate()
-        module = f"{ROOT.name}.adapters.astrbot_plugin"
+        module = f"{ROOT.name}.adapters.astrbot.plugin"
         with patch(f"{module}.Cache.load", side_effect=RuntimeError("private storage detail")):
             await self.plugin.initialize()
         self.assertFalse(self.plugin.ready)
@@ -293,9 +309,6 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         await self.plugin.capture_reply(event, SimpleNamespace(completion_text="late reply"))
         await self.plugin.record_delivery(event)
         await self.plugin.attention_gate(event)
-        request = SimpleNamespace(system_prompt="original")
-        await self.plugin.inject_scene_hints(event, request)
-        self.assertEqual(request.system_prompt, "original")
         self.assertEqual(event.extras, extras)
         self.assertIsNone(self.plugin.services)
         await self.plugin.initialize()
@@ -528,7 +541,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
         self.plugin.services.runtime.memory_context = FailedMemoryContext()
         event = PrivateEvent("private message body")
         req = SimpleNamespace(system_prompt="base")
-        hooks = importlib.import_module(f"{ROOT.name}.adapters.astrbot_hooks")
+        hooks = importlib.import_module(f"{ROOT.name}.adapters.astrbot.hooks")
         with patch.object(hooks.logger, "error") as error_log:
             await self.plugin.inject_memory(event, req)
 
@@ -656,7 +669,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
 
         actions = Actions()
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
         self.assertEqual(provider.calls[0][0], "ambient deferred message")
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
@@ -711,7 +724,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
             return provider
 
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.tick()
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
         self.assertEqual(provider.calls, 0)
@@ -761,7 +774,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
 
         actions = Actions()
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.tick()
         self.assertEqual(actions.sent, [(session_id, "retry-only reply")])
 
@@ -795,7 +808,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
 
         actions = Actions()
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = actions
+        self.plugin.services.runtime.action_executor = action_executor_for(actions)
         await self.plugin.services.runtime_worker.tick()
         await self.plugin.services.runtime_worker.tick()
         self.assertEqual(actions.sent, [(session_id, "tick reply")])
@@ -853,8 +866,7 @@ class HostTests(unittest.IsolatedAsyncioTestCase):
             return Provider()
 
         self.plugin.context.get_using_provider_async = provider_for
-        self.plugin.services.runtime.message_sender = Actions()
-        self.plugin.services.runtime.message_sender = self.plugin.services.runtime.message_sender
+        self.plugin.services.runtime.action_executor = action_executor_for(Actions())
         await self.plugin.services.runtime_worker.dispatch(session_id, now)
         state = self.plugin.services.runtime.store.get(session_id)
         self.assertGreater(state.wait_until, now)

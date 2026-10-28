@@ -4,6 +4,8 @@
 
 ### 中文
 
+- 兼容 v0.5.0 的 AstrBot 包结构，修正内置人格包路径，保留上游动作审计及自动测试发现机制；验证人格包、Dream 历史及重启恢复。无额外数据库或配置变更。
+
 - 同步 v0.4.3 后的宿主运行时，保留人格包与 Dream 控制台接线；补齐重载及启动失败重试验证，将控制台文档迁入中英双语目录，日志增加“允许回复／本轮不回复”状态筛选。无新增数据库或配置变更。
 
 - 按界面反馈移除星图数量提示、关联筛选入口、底部键盘列表及重复详情按钮；浮动卡片的详情按钮跟随记忆点配色，明黄、淡绿使用深色文字。
@@ -32,11 +34,9 @@
 
 - 人格控制台接入历史版本回滚、差异比较与变化原因；安装时校验预览内容，按版本显示已安装状态；Dream 日志区分预算停止与完成，并显示调度开关。新增控制台接口需与 dashboard 同步更新，不涉及数据库迁移或配置变化（#82 / #83）。
 
-- 补齐 AstrBot 生命周期清理和 DSH 运行时协议桥：支持能力识别、同轮 Source 回执与时间传递、服务决策映射和卸载取消；运行时写失败不补发旧捕获，生成回复不冒充已交付。新增共享契约、宿主与本机模拟服务测试，真实 DSH/Python 联调及 #117 动作审计接线仍待完成，无数据库或配置变更。
-
-- 补齐宿主动作执行接口，AstrBot 发送复用同一入口；不支持的动作和宿主失败返回固定原因码，取消继续交给运行时恢复。动作正文不进入审计，不修改数据库、公开配置或运行时策略。
-
 ### English
+
+- Integrate the v0.5.0 AstrBot package layout, correct the built-in persona-pack path, and retain upstream action auditing and automatic test discovery. Verify persona packs, Dream history and restart recovery without additional database or configuration changes.
 
 - Integrate the post-v0.4.3 host runtime while retaining persona-pack and Dream console wiring. Verify reload and failed-start retry, move console documentation into the bilingual tree, and expose allow-reply/skip-reply log filters. No additional database or configuration changes.
 
@@ -66,9 +66,28 @@
 
 - Connect persona rollback with version diffs and change reasons; validate previewed pack content before installation and show installed versions accurately. Dream distinguishes budget stops from completion and reports scheduling state. Ship the new console API and dashboard together; no database migration or configuration change (#82 / #83).
 
-- Harden AstrBot lifecycle cleanup and add the DSH runtime protocol bridge with capability detection, per-turn Source receipts and time metadata, server decision mapping, and unload cancellation. Failed runtime writes never fall back to legacy capture, and generation is not treated as delivery. Add shared-contract, host, and loopback mock tests. Real DSH/Python integration and the #117 action audit wiring remain pending; no database or configuration changes.
+## 0.5.0 — 2026-10-28
 
-- Add the host action execution port and route AstrBot sends through it. Unsupported actions and host failures return fixed reason codes; cancellation propagates to runtime recovery. Action text stays out of audit, with no database, public configuration, or runtime policy change.
+### 中文
+
+- 修复 Source 回查的新鲜度排序：带时区时间戳与本地时间混用时，按实际经过时间计分，避免近期消息被当成旧消息；无时区时间按本地时间解释，不修改历史数据或配置。
+- 修复印象合并的部分提交和成功误报：强化或改写旧印象与退役新印象通过同一事务提交，成功后再更新缓存；写入失败和版本冲突由服务层记录。两条变更统一按 merge 审计，沿用现有数据库格式（#138）。
+- 新增默认关闭的主动决策纯策略，显式处理到期时间、安静窗口、冷却、重试、忽略连击退避和最大尝试次数；有界选择器优先派发最早到期会话，其余保持待处理。
+- 扩展 `runtime_episodes` 保存无正文的动作尝试与终态；重复回调幂等，每个 action 最多保留一个终态，并沿用现有保留清理。
+- 新增 `AgentRuntime.schedule_proactive()` 和 AstrBot `proactive_idle_seconds` 排期入口；主动策略从纯策略接到真实 worker。宿主发送动作也进入 action ledger，成功/失败均形成无正文终态。
+- 将 AgentRuntime 默认注意力收敛为单一 `DefaultAttentionPolicy`：主人/私聊/直接提及回复，非主人直接提及后按说话人保留 3 轮后续回复；移除默认路径中的额度、preset、阈值、关系/热度信号和场景提示，策略结果只通过 `AttentionDecision` 向 Runtime 返回通用状态补丁。
+- 收口 Runtime action 链路：新增 `ActionExecutor` 统一 attempt/terminal 与 `ActionPort` 执行，`ActionMessageSender` 仅作为 `SEND_TEXT` 兼容适配器；AstrBot 发送/工具审计统一走 ActionExecutor，不再直接操作 ledger。
+
+### English
+
+- Fix Source recall recency ranking when offset-aware timestamps are mixed with local time: score actual elapsed time instead of treating recent messages as old. Naive timestamps use local time; stored data and configuration are unchanged.
+- Fix partial commits and false success in impression consolidation: updating the existing impression and retiring the incoming one share a transaction, with cache updates after commit. Write failures and revision conflicts reach service-layer error handling. Both changes are audited as merge operations using the existing database format (#138).
+- Add a default-closed pure proactive policy for due times, quiet windows, cooldown, retry, ignored-streak backoff and maximum attempts. Its bounded selector dispatches the oldest eligible sessions first and leaves the rest pending.
+- Extend `runtime_episodes` with content-free action attempts and terminal outcomes. Duplicate callbacks are idempotent, each action keeps at most one terminal outcome, and existing retention cleanup applies.
+- Add `AgentRuntime.schedule_proactive()` and the AstrBot `proactive_idle_seconds` scheduling entry so the pure proactive policy reaches the real worker. Host send actions now enter the action ledger with content-free success/failure terminals.
+- Collapse the default AgentRuntime attention path to one `DefaultAttentionPolicy`: owner, private, and direct attention reply; a non-owner direct interaction retains a per-speaker three-round follow-up window; quota, presets, thresholds, relationship/heat signals, and scene hints are removed from the default path. Policy results return a generic state patch through `AttentionDecision`.
+
+- Collapse the runtime action path: `ActionExecutor` now owns attempt/terminal coordination around `ActionPort`, while `ActionMessageSender` is only a `SEND_TEXT` compatibility adapter. AstrBot send/tool audit now goes through ActionExecutor instead of touching the ledger directly.
 
 ## 0.4.3 — 2026-10-27
 

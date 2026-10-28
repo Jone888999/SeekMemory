@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from .astrbot_time import utc8_timestamp
-from .astrbot_event import event_id as host_event_id, to_runtime_input
+from .time import utc8_timestamp
+from .events import event_id as host_event_id, to_runtime_input
 
 try:
-    from ..app.runtime.contracts import (
+    from ...app.runtime.contracts import (
         RunDecision,
         RuntimeInput,
         UserRunReceipt,
         WakeAction,
     )
-    from ..app.runtime.recorder import RecordedReply
-    from ..core.source import make_source_id
-    from ..app.runtime.tools import ToolPolicy, trace_tool_call
+    from ...app.runtime.recorder import RecordedReply
+    from ...core.source import make_source_id
+    from ...app.runtime.tools import ToolPolicy, trace_tool_call
 except ImportError:
     from app.runtime.contracts import (
         RunDecision,
@@ -36,10 +36,12 @@ class AstrBotRuntimeAdapter:
     def from_event(event, text: str, umo: str, sender: str,
                    unread_count: int = 0, unread_seq: int = 0,
                    received_at: float | None = None, owner_id: str = "",
-                   names: tuple[str, ...] = ()) -> RuntimeInput:
+                   names: tuple[str, ...] = (),
+                   clock=None) -> RuntimeInput:
         mapped = to_runtime_input(
             event, session_id=umo, owner_id=owner_id, names=names,
             unread_count=unread_count, unread_seq=unread_seq, received_at=received_at,
+            clock=clock,
         )
         value = str(text or "")
         return replace(

@@ -63,7 +63,6 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.delivered)
         state = self.store.get("s1")
         self.assertEqual(state.last_spoke_at, 165)
-        self.assertEqual(state.cooldown_until, 195)
         self.assertEqual(state.unread_count, 0)
         self.assertEqual(state.wait_until, 0)
         self.assertEqual(self.sources[-1].at, "1970-01-01T00:02:45+00:00")

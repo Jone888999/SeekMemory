@@ -7,24 +7,34 @@ module path directly would leave them unbound after plugin reload.
 
 from __future__ import annotations
 
-import time
-
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 
-from ..perceive.calls import log_call
-from .astrbot_attention import AttentionHooks
-from .astrbot_runtime import AstrBotRuntimeAdapter
+from ...app.runtime.contracts import ActionKind, ActionRequest, ActionStatus
+from ...app.runtime.tools import tool_result_failed
+from ...perceive.calls import log_call
+from .attention import AttentionHooks
+from .runtime import AstrBotRuntimeAdapter
 
 
 class AstrBotHooks:
     """Host event mapping and delegation; owns no memory algorithms."""
 
+    def __init__(self, host=None) -> None:
+        self.host = host
+        self.clock = getattr(host, "clock", None) or (lambda: 0.0)
+
+    def __getattr__(self, name):
+        host = self.__dict__.get("host")
+        if host is not None:
+            return getattr(host, name)
+        raise AttributeError(name)
+
     def _maybe_prune_runtime_episodes(self) -> None:
         """Keep runtime audit bounded without doing work on every message."""
         if self.store is None:
             return
-        now = time.time()
+        now = self.clock()
         if now - self._last_runtime_prune_at < 60:
             return
         try:
@@ -86,6 +96,7 @@ class AstrBotHooks:
                 event, text, umo, str(event.get_sender_id()),
                 owner_id=getattr(self, "_owner_id", lambda: "")(),
                 names=getattr(self, "_address_names", lambda: ())(),
+                clock=self.clock,
             )
             context = self.services.runtime.build_context(runtime_input)
             block, info = context.text, context.info
@@ -140,11 +151,19 @@ class AstrBotHooks:
                 sender,
                 owner_id=getattr(self, "_owner_id", lambda: "")(),
                 names=getattr(self, "_address_names", lambda: ())(),
+                clock=self.clock,
+            )
+            decision = AstrBotRuntimeAdapter.get_extra(
+                event, "_seekmemory_attention_decision", None
             )
             receipt = self.services.runtime.accept_user(
                 runtime_input,
                 event_id=AstrBotRuntimeAdapter.event_id(event),
                 deferred=deferred,
+                decision=decision,
+            )
+            AstrBotRuntimeAdapter.set_extra(
+                event, "_seekmemory_attention_decision", receipt.decision
             )
             if self.buffer.save_error:
                 self.journal.record(
@@ -158,6 +177,7 @@ class AstrBotHooks:
             except Exception:
                 pass
             AstrBotRuntimeAdapter.bind_user(event, receipt)
+            self._schedule_proactive(umo)
             AstrBotRuntimeAdapter.apply_decision(event, receipt.decision)
             AstrBotRuntimeAdapter.apply_llm_gate(
                 event,
@@ -165,6 +185,53 @@ class AstrBotHooks:
                 bool(self._c("runtime_gate_enabled", False)),
             )
         except Exception:
+            pass
+
+    def _schedule_proactive(self, session_id: str) -> None:
+        if not bool(self._c("proactive_enabled", False)):
+            return
+        try:
+            delay = float(self._c("proactive_idle_seconds", 1800))
+            schedule = getattr(self.services.runtime, "schedule_proactive", None)
+            if callable(schedule):
+                schedule(session_id, delay, now=self.clock())
+        except Exception:  # noqa: BLE001 - proactive scheduling is fail-open
+            pass
+
+    def _begin_send_action(self, event, session_id: str, run_id: str, turn_id: str) -> None:
+        executor = getattr(self, "action_executor", None)
+        if executor is None:
+            return
+        try:
+            record = executor.begin(
+                ActionRequest(
+                    session_id=session_id,
+                    kind=ActionKind.SEND_TEXT,
+                    text="",
+                ),
+                run_id=run_id,
+                callback_key=f"send:{turn_id or run_id}",
+                at=self.clock(),
+            )
+            AstrBotRuntimeAdapter.set_extra(
+                event, "_seekmemory_send_action", record
+            )
+        except Exception:  # noqa: BLE001 - audit must not break replies
+            pass
+
+    def _finish_send_action(self, event, status: ActionStatus, reason: str = "") -> None:
+        executor = getattr(self, "action_executor", None)
+        if executor is None:
+            return
+        try:
+            record = AstrBotRuntimeAdapter.get_extra(
+                event, "_seekmemory_send_action", None
+            )
+            if record is None:
+                return
+            executor.finish(record, status, at=self.clock(), reason=reason)
+            AstrBotRuntimeAdapter.set_extra(event, "_seekmemory_send_action", None)
+        except Exception:  # noqa: BLE001
             pass
 
     async def capture_reply(self, event: AstrMessageEvent, response) -> None:
@@ -192,6 +259,12 @@ class AstrBotHooks:
             )
             if reply is not None:
                 AstrBotRuntimeAdapter.bind_reply(event, reply)
+                self._begin_send_action(
+                    event,
+                    str(getattr(event, "unified_msg_origin", "") or ""),
+                    self.run_tracer.run_id(event),
+                    reply.turn_id,
+                )
         except Exception:
             pass
 
@@ -216,6 +289,7 @@ class AstrBotHooks:
             assistant_source_id=assistant_source_id,
             read_through_seq=AstrBotRuntimeAdapter.read_through_seq(event),
         )
+        self._finish_send_action(event, ActionStatus.SUCCEEDED)
         AstrBotRuntimeAdapter.mark_episode_recorded(event)
         self._maybe_prune_runtime_episodes()
 
@@ -240,6 +314,7 @@ class AstrBotHooks:
         self.trace.record("runtime", "agent_done", {"role": role})
         if role != "err":
             return
+        self._finish_send_action(event, ActionStatus.FAILED, "agent_error")
         self.services.runtime.record_error(
             run_id=self.run_tracer.run_id(event),
             session_id=str(getattr(event, "unified_msg_origin", "") or ""),
@@ -250,10 +325,64 @@ class AstrBotHooks:
         )
         self._maybe_prune_runtime_episodes()
 
+    def _tool_action_key(self, event, tool) -> str:
+        event_id = AstrBotRuntimeAdapter.event_id(event)
+        tool_name = str(getattr(tool, "name", tool) or "tool")
+        tool_id = str(
+            getattr(tool, "id", "")
+            or getattr(tool, "call_id", "")
+            or ""
+        )
+        return f"{event_id}:{tool_name}:{tool_id}"
+
+    def _begin_tool_action(self, event, tool, tool_args) -> None:
+        executor = getattr(self, "action_executor", None)
+        if executor is None:
+            return
+        try:
+            attempts = getattr(self, "_action_attempts", None)
+            if attempts is None:
+                attempts = {}
+                self._action_attempts = attempts
+            key = self._tool_action_key(event, tool)
+            record = executor.begin(
+                ActionRequest(
+                    session_id=str(getattr(event, "unified_msg_origin", "") or ""),
+                    kind=ActionKind.TOOL_CALL,
+                    text=str(getattr(tool, "name", tool) or ""),
+                ),
+                run_id=self.run_tracer.run_id(event),
+                callback_key=key,
+                at=self.clock(),
+            )
+            attempts[key] = record
+        except Exception:  # noqa: BLE001 - audit failure must not break the run
+            pass
+
+    def _finish_tool_action(self, event, tool, tool_result) -> None:
+        executor = getattr(self, "action_executor", None)
+        attempts = getattr(self, "_action_attempts", {})
+        if executor is None:
+            return
+        try:
+            key = self._tool_action_key(event, tool)
+            record = attempts.pop(key, None)
+            if record is None:
+                return
+            status = (
+                ActionStatus.FAILED
+                if tool_result_failed(tool_result)
+                else ActionStatus.SUCCEEDED
+            )
+            executor.finish(record, status, at=self.clock())
+        except Exception:  # noqa: BLE001
+            pass
+
     async def observe_tool(self, event, tool, tool_args) -> None:
         if not self._may_observe(event):
             return
         self.run_tracer.tool_begin(event, tool)
+        self._begin_tool_action(event, tool, tool_args)
         call = AstrBotRuntimeAdapter.observe_tool(
             event, tool, tool_args, self.tool_policy
         )
@@ -271,6 +400,7 @@ class AstrBotHooks:
         if not self._may_observe(event):
             return
         self.run_tracer.tool_end(event, tool)
+        self._finish_tool_action(event, tool, tool_result)
         name = str(getattr(tool, "name", tool) or "")
         self.trace.record(
             "tool",
@@ -290,11 +420,13 @@ class AstrBotHooks:
         self.services.background_service.start()
 
 
-def _register(main_module: str, name: str, decorator, owner=AstrBotHooks):
-    function = getattr(owner, name)
-    function.__module__ = main_module
-    function.__qualname__ = f"Main.{name}"
-    return decorator(function)
+def _register(main_module: str, name: str, decorator, component: str = "hooks"):
+    async def handler(self, *args, **kwargs):
+        return await getattr(getattr(self, component), name)(*args, **kwargs)
+
+    handler.__module__ = main_module
+    handler.__qualname__ = f"Main.{name}"
+    return decorator(handler)
 
 
 def build_astrbot_hooks(main_module: str) -> dict:
@@ -333,10 +465,6 @@ def build_astrbot_hooks(main_module: str) -> dict:
             main_module,
             "attention_gate",
             filter.event_message_type(filter.EventMessageType.ALL, priority=9999),
-            owner=AttentionHooks,
-        ),
-        "inject_scene_hints": _register(
-            main_module, "inject_scene_hints", filter.on_llm_request(),
-            owner=AttentionHooks,
+            component="attention",
         ),
     }

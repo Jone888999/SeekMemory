@@ -12,8 +12,8 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from adapters.astrbot_runtime import AstrBotRuntimeAdapter  # noqa: E402
-from adapters.astrbot_event import to_runtime_input  # noqa: E402
+from adapters.astrbot.runtime import AstrBotRuntimeAdapter  # noqa: E402
+from adapters.astrbot.events import to_runtime_input  # noqa: E402
 from app.runtime import (  # noqa: E402
     ActionRequest, ActionResult, MemoryContext, MemoryContextRequest, RunDecision,
     RunResult, RuntimeInput, UserRunReceipt,
