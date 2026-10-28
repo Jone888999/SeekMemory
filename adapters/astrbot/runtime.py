@@ -51,7 +51,7 @@ class AstrBotRuntimeAdapter:
             session_id=str(umo or ""),
             text=value,
             speaker_id=str(sender or ""),
-            mentioned=mapped.private or mapped.mentioned,
+            mentioned=mapped.mentioned,
             question=("?" in value or "\uff1f" in value),
         )
 
