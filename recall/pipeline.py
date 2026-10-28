@@ -312,7 +312,11 @@ def build_block(
                         for index, source_id in enumerate(source_ids)
                     }
                     source_arts = sorted(
-                        artifacts.by_source_ids(source_ids),
+                        (
+                            art
+                            for art in artifacts.by_source_ids(source_ids)
+                            if art.header.family != "relationship"
+                        ),
                         key=lambda art: (
                             min(
                                 (

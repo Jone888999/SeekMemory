@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import unittest
@@ -82,11 +83,13 @@ class InteractionPolicyTest(unittest.TestCase):
                 gate = decide_interaction(
                     snapshot,
                     InteractionContext("source-1", "private", True, False),
+                    InteractionPolicySettings(mode="enforce"),
                 )
                 self.assertEqual(gate.reply_probability, expected)
                 required = decide_interaction(
                     snapshot,
                     InteractionContext("source-1", "private", True, True),
+                    InteractionPolicySettings(mode="enforce"),
                 )
                 self.assertEqual(required.reply_probability, 1.0)
                 self.assertTrue(required.allow_reply)
@@ -97,10 +100,12 @@ class InteractionPolicyTest(unittest.TestCase):
             ambient = decide_interaction(
                 snapshot,
                 InteractionContext("source", "ambient", False, False),
+                InteractionPolicySettings(mode="enforce"),
             )
             direct = decide_interaction(
                 snapshot,
                 InteractionContext("source", "direct", False, True),
+                InteractionPolicySettings(mode="enforce"),
             )
             self.assertEqual(
                 ambient.allow_reply,
@@ -116,6 +121,7 @@ class InteractionPolicyTest(unittest.TestCase):
         gate = decide_interaction(
             snapshot,
             InteractionContext("source", "ambient", False, False),
+            InteractionPolicySettings(mode="enforce"),
         )
         prompt = interaction_prompt(gate)
         self.assertEqual(gate.style, ReplyStyle.CUTE)
@@ -153,6 +159,22 @@ class InteractionPolicyTest(unittest.TestCase):
                 "relationship_dislike_private_reply_probability",
             ],
         )
+    def test_default_configuration_is_observe_only(self) -> None:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "_conf_schema.json"), encoding="utf-8") as handle:
+            schema = json.load(handle)
+        self.assertEqual(schema["relationship_mode"]["default"], "observe")
+
+        settings = settings_from_config(lambda _key, default: default)
+        self.assertEqual(settings.mode, "observe")
+        gate = decide_interaction(
+            RelationshipSnapshot("u1", -0.6, 0.8, 5, RelationshipBand.DISLIKE),
+            InteractionContext("source-1", "private", True, False),
+            settings,
+        )
+        self.assertFalse(gate.enforced)
+        self.assertEqual(interaction_prompt(gate), "")
+
 
 
 class RelationshipAdapterPolicyTest(unittest.TestCase):
@@ -197,7 +219,7 @@ class RelationshipAdapterPolicyTest(unittest.TestCase):
     def test_private_required_is_derived_from_actual_host_signal_not_runtime_flag(self) -> None:
         policy = RelationshipInteractionPolicy(
             FixedReader(self._snapshot(RelationshipBand.DISLIKE)),
-            InteractionPolicySettings(),
+            InteractionPolicySettings(mode="enforce"),
         )
         runtime_private = RunDecision(
             WakeAction.REPLY,
@@ -216,7 +238,7 @@ class RelationshipAdapterPolicyTest(unittest.TestCase):
             source_id="source-1",
         )
         direct = policy.decide(
-            RuntimeInput("p3", "hello", "u1", private=True, addressed=True),
+            RuntimeInput("p3", "hello", "u1", private=True, mentioned=True),
             runtime_private,
             source_id="source-1",
         )

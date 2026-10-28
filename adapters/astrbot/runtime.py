@@ -51,7 +51,7 @@ class AstrBotRuntimeAdapter:
             session_id=str(umo or ""),
             text=value,
             speaker_id=str(sender or ""),
-            mentioned=mapped.private or mapped.mentioned,
+            mentioned=mapped.mentioned,
             question=("?" in value or "\uff1f" in value),
         )
 
@@ -185,14 +185,14 @@ class AstrBotRuntimeAdapter:
 
     @classmethod
     def apply_llm_gate(cls, event, decision: RunDecision, enabled: bool) -> None:
+        if not enabled:
+            return
         gate = cls.interaction_gate(event)
         if gate.enforced and not gate.allow_reply:
             try:
                 event.should_call_llm(False)
             except Exception:  # noqa: BLE001 - host version may not expose the gate
                 pass
-            return
-        if not enabled:
             return
         try:
             event.should_call_llm(

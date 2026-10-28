@@ -90,8 +90,10 @@ class RelationshipInteractionPolicy:
         must_reply = decision.must_reply
         if event.private:
             # A private message is not automatically a direct question.
-            must_reply = bool(event.question or event.addressed or event.reply_to_me)
-        elif event.question or event.addressed or event.reply_to_me:
+            must_reply = bool(
+                event.question or event.mentioned or event.addressed or event.reply_to_me
+            )
+        elif event.question or event.mentioned or event.addressed or event.reply_to_me:
             # Explicit questions and host direct signals must not be muted by
             # relationship state, including in group conversations.
             must_reply = True
@@ -116,7 +118,7 @@ def settings_from_config(
     warn: Callable[[str], None] = lambda _key: None,
 ) -> InteractionPolicySettings:
     """Normalize backend relationship mode and probabilities without user data."""
-    mode = str(config("relationship_mode", "enforce") or "").strip().lower()
+    mode = str(config("relationship_mode", "observe") or "").strip().lower()
     if mode not in ("off", "observe", "enforce"):
         warn("relationship_mode")
         mode = "observe"

@@ -48,14 +48,13 @@ class Event:
 
 
 class AdapterTest(unittest.TestCase):
-    def test_private_event_is_private_but_not_addressed_without_host_signal(self) -> None:
+    def test_private_event_maps_actual_host_direct_signal(self) -> None:
         event = Event(True)
         result = AstrBotRuntimeAdapter.from_event(
             event, "hello?", "s1", "u1", unread_count=3
         )
         self.assertTrue(result.private)
-        self.assertTrue(result.mentioned)
-        self.assertFalse(result.addressed)
+        self.assertFalse(result.mentioned)
         self.assertTrue(result.question)
         self.assertEqual(result.unread_count, 3)
         event.at_me = True

@@ -20,7 +20,7 @@ persona.py selects at most three behavior categories from trusted self-impressio
 
 ## Relationship consolidation
 
-relationship.py consumes original `relationship-v1` observations only after validating confidence, immutable Source existence, user-Source ownership, and one private/group/unknown scope. Private evidence weight is `1.0`; group and unknown are `0.5`. The pure rulebook separates counted IDs from reviewed IDs, caps repeated reasons per cycle, and limits one affinity revision to `0.10`. Maintenance commits the stable per-subject Relationship Artifact through expected-revision CAS, then updates Cache. `relationship_mode=off` skips consolidation; `observe` and `enforce` both persist state.
+relationship.py consumes original `relationship-v1` observations only after validating confidence, immutable Source existence, user-Source ownership, and one private/group/unknown scope. Private evidence weight is `1.0`; group and unknown are `0.5`. The pure rulebook separates counted IDs from reviewed IDs, caps repeated reasons per cycle, and limits one affinity revision to `0.10`. Maintenance commits the stable per-subject Relationship Artifact through expected-revision CAS, then updates Cache. `relationship_mode=off` skips consolidation; the default `observe` mode and explicit `enforce` both consolidate and persist the derived state. Observe mode may compute a candidate interaction profile, but reply denial still requires `relationship_mode=enforce` together with `runtime_gate_enabled=true`.
 
 ## Rules not connected to the production flow
 
