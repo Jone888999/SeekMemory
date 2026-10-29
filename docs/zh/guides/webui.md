@@ -4,7 +4,26 @@
 
 安装 SeekMemory Release 插件并在 AstrBot 重载后，从 SeekMemory 插件卡片的插件视图入口打开管理界面。插件配置仍在 AstrBot 配置页维护。直接打开静态 HTML 或运行 pnpm dev:host 不会连接生产插件；开发预览请使用 dashboard 的 Mock 模式。
 
-所有管理 API 都要求宿主提供已登录管理员请求上下文。管理页可以读取完整记忆和原始来源证据，请仅在可信管理员会话中使用。
+AstrBot 入口要求宿主提供已登录管理员请求上下文；独立入口使用单独的管理员令牌。管理页可以读取完整记忆和原始来源证据，请仅在可信管理员会话中使用。
+
+## 本机独立控制台
+
+在源码仓库使用 Python 3.10 或更新版本，先构建页面，再启动服务：
+
+```bash
+pnpm --dir dashboard install --frozen-lockfile
+pnpm --dir dashboard build
+export SEEKMEMORY_CONSOLE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+python3 scripts/console_http.py --data-dir ./data/console --port 8766
+```
+
+打开 `http://127.0.0.1:8766`，保留默认 API 地址，输入环境变量中的管理员令牌并连接。令牌必须至少包含 32 个无空白 ASCII 字符；令牌只保存在页面内存，刷新、断开或服务更换令牌后需要重新输入。服务仅监听 `127.0.0.1`，不提供远程部署入口。
+
+数据目录包含既有格式的 `memory.db`、`persona_packs/` 和 `run_traces.jsonl`。首次使用建议选择新的目录；已有数据需要先停止其宿主并备份，再离线复制整个数据目录。不要让 AstrBot 或另一独立进程同时管理同一个目录：每个进程持有自己的 active cache，无法同步另一个进程的修改。现有 AstrBot 配置与数据库格式不变。
+
+独立控制台支持记忆列表、详情、人工修订、人格包及召回诊断。它不启动聊天宿主、模型、抽取队列或维护调度；维护按钮显示为不可用。生命周期日志为空；运行轨迹展示所选目录中经过既有白名单校验的 trace，仍需事件生产者提供记录。新的可观测契约接入与导入任务状态需要相应 API 就绪。
+
+开发时运行 `pnpm --dir dashboard dev:standalone`，并给服务增加 `--allow-origin http://127.0.0.1:5176`。在连接页填写 `http://127.0.0.1:8766/api/`。允许来源只接受明确的本机 HTTP origin；默认不开放其他页面来源。退出服务使用 Ctrl+C；重新启动时从环境变量读取令牌，不生成令牌文件。
 
 ## 记忆库
 

@@ -2,10 +2,18 @@
 
 ## Layers
 
-- `webui/` keeps host-neutral jobs, journal, and trace primitives; AstrBot management routes live in `adapters/astrbot/web.py`, where the adapter owns authentication, method/body limits, and status mapping.
+- `webui/` keeps host-neutral jobs, journal, trace primitives, and management dispatch in `console_api.py`. The independent HTTP boundary lives in `adapters/console/`; AstrBot management routes remain in `adapters/astrbot/web.py`.
 - services/management_service.py implements framework-independent catalog, detail, edit, persona bootstrap/rollback, and recall-diagnostic use cases.
 - dashboard/ is the React/TypeScript management interface, organized around memory library, control/diagnostics/logs/run traces/persona evidence workspaces.
-- The AstrBot page bridge sends authenticated host requests to the plugin API; a static page and development mock do not connect to the real database.
+- The AstrBot page bridge sends authenticated host requests to the plugin API. The standalone page uses a configurable HTTP API and administrator token. Mock mode operates only in memory.
+
+## Independent HTTP boundary
+
+`scripts/console_http.py` starts `adapters/console/server.py`. Its `runtime.py` composes the existing Store, Cache, RecallService, ManagementService, StatusService, and PersonaPacks. Production operations use application services; HTTP dispatch accesses no database and imports no AstrBot modules. HTTPServer handles requests sequentially so SQLite creation, use, and cleanup stay on one thread.
+
+`openapi.yaml` defines `/manage/<action>` paths with `/api` and `/astrbot_plugin_seekmemory` server prefixes. Existing AstrBot URLs, request bodies, and error envelopes remain compatible. Every standalone API read and write checks the Bearer token, Host, and origin. Binding is local, development origins require explicit permission, request sizes are bounded, and token-bearing requests disable caching and redirects. Static serving exposes only built entry files and assets, never the data directory.
+
+The frontend `management-client.ts` shares Zod response validation; `http-client.ts` and `astrbot-client.ts` implement HTTP and host transport separately. Components receive only ManagementClient. Standalone tokens never enter URLs, logs, or browser storage. Disconnect cancels requests; a 401 returns to the connection page. Optional status field `capabilities.maintenanceTasks=false` disables background tasks that the standalone service does not start. Older hosts without the field retain existing behavior.
 
 ## Management writes
 

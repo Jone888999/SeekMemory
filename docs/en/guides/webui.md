@@ -4,7 +4,26 @@
 
 Install the SeekMemory Release plugin and reload it in AstrBot. Open the management interface from the SeekMemory plugin card's plugin-view entry. Plugin configuration remains in the AstrBot configuration page. Opening a static HTML page or running pnpm dev:host does not connect to the production plugin; use dashboard Mock mode for local previews.
 
-All management API calls require the host's authenticated administrator context. The interface can read the complete memory catalog and original evidence, so use it only in a trusted admin session.
+The AstrBot entry requires the host's authenticated administrator context; the standalone entry uses a separate administrator token. The interface can read the complete memory catalog and original evidence, so use it only in a trusted admin session.
+
+## Local standalone console
+
+From a source checkout with Python 3.10 or newer, build the page and start the service:
+
+```bash
+pnpm --dir dashboard install --frozen-lockfile
+pnpm --dir dashboard build
+export SEEKMEMORY_CONSOLE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+python3 scripts/console_http.py --data-dir ./data/console --port 8766
+```
+
+Open `http://127.0.0.1:8766`, keep the default API address, and connect using the administrator token in the environment variable. Tokens require at least 32 non-whitespace ASCII characters and live only in page memory. Refreshing, disconnecting, or replacing the service token requires entering it again. The service binds only to `127.0.0.1` and provides no remote deployment entry.
+
+The data directory contains the existing `memory.db`, `persona_packs/`, and `run_traces.jsonl` formats. Start with a new directory. To inspect existing data, stop its host and back it up before copying the complete directory offline. Do not let AstrBot or another standalone process manage the same directory concurrently: each process owns an active cache that cannot track another process's edits. Existing AstrBot configuration and database formats are unchanged.
+
+The standalone console supports the memory list, details, manual revisions, persona packs, and recall diagnostics. It starts no chat host, model, extraction queue, or maintenance scheduler; maintenance buttons are unavailable. Lifecycle logs are empty. Run traces show existing allowlisted records from the selected directory and still require an event producer. Integration with the new observability contract and import-task status depends on the corresponding APIs becoming available.
+
+For development, run `pnpm --dir dashboard dev:standalone` and add `--allow-origin http://127.0.0.1:5176` to the service command. Enter `http://127.0.0.1:8766/api/` on the connection page. Allowed origins must be explicit local HTTP origins; other page origins are rejected by default. Stop with Ctrl+C. Restart reads the token from the environment and creates no token file.
 
 ## Memory library
 

@@ -45,6 +45,7 @@ export const personaRevisionSchema = z.object({
   sourceIds: z.array(z.string()).default([]),
 })
 export const statusSchema = z.object({
+  capabilities: z.object({ maintenanceTasks: z.boolean() }).exactOptional(),
   ready: z.boolean(),
   checks: z.array(
     z.object({ name: z.string(), ok: z.boolean(), detail: z.string() })

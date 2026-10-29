@@ -2,10 +2,18 @@
 
 ## 分层
 
-- `webui/` 只保留宿主无关的 jobs、journal 和 trace；AstrBot 管理路由位于 `adapters/astrbot/web.py`，由适配层负责认证、方法和状态码映射。
+- `webui/` 保留宿主无关的 jobs、journal、trace 与 `console_api.py` 管理分发；独立 HTTP 边界位于 `adapters/console/`，AstrBot 管理路由位于 `adapters/astrbot/web.py`。
 - services/management_service.py 实现框架无关的目录、详情、编辑、人格 bootstrap/rollback 和召回诊断用例。
 - dashboard/ 是 React/TypeScript 管理界面，按 memory library、control/diagnostics/logs/run-traces/persona evidence 等工作区组织状态与视图。
-- AstrBot 页面桥接器把已认证的宿主请求送到插件 API；静态页面和 mock 模式不连接真实数据库。
+- AstrBot 页面桥接器把已认证的宿主请求送到插件 API；独立页面通过可配置 HTTP API 和管理员令牌连接。Mock 模式仅操作内存。
+
+## 独立 HTTP 边界
+
+`scripts/console_http.py` 启动 `adapters/console/server.py`，`runtime.py` 组合既有 Store、Cache、RecallService、ManagementService、StatusService 和 PersonaPacks。生产调用通过应用用例读写，HTTP 分发不访问数据库，也不导入 AstrBot。HTTPServer 顺序处理请求，SQLite 的创建、使用和关闭位于同一线程。
+
+`openapi.yaml` 使用 `/manage/<action>` 操作路径，服务器前缀分别为 `/api` 与 `/astrbot_plugin_seekmemory`。现有 AstrBot URL、请求体和错误结构保持兼容。独立 API 对所有读写操作校验 Bearer 令牌、Host 和来源；只允许本机监听与明确的开发 origin，限制请求大小，禁止缓存与重定向携带令牌。静态服务仅开放构建入口和 assets，不开放数据目录。
+
+前端 `management-client.ts` 共享 Zod 响应校验；`http-client.ts` 与 `astrbot-client.ts` 分别实现 HTTP 和宿主桥接。组件只接收 ManagementClient。独立连接的令牌不进入 URL、日志或浏览器存储；断开会取消请求，401 返回连接页。状态中的可选 `capabilities.maintenanceTasks=false` 明确禁止独立服务未启动的后台任务；旧宿主未提供此字段时维持既有行为。
 
 ## 管理写入
 
