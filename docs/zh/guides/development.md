@@ -26,24 +26,36 @@
 
 执行严格构建：
 
+    python3 scripts/check_docs_structure.py
     mkdocs build --strict
+
+结构检查验证导航、双语页面集合及相对 Markdown 文件链接；严格构建检查站点能否按当前配置生成。两者不自动验证文档描述是否符合代码。若缺少 `material` 主题，先安装上述文档依赖，不能把依赖缺失当作文档已经通过构建。
 
 ## 后端验证层
 
-脚本依据 tests/layers.py 把平铺的 unittest 文件分为多个责任层。按改动选择适当范围：
+脚本依据 tests/layers.py 把平铺的 unittest 文件分层，显式 `_unit.py`、`_integration.py` 等后缀优先于旧名称规则。每个文件在独立进程中通过 unittest 发现执行，包含 `__main__` 之后的测试定义，宿主替身不会在文件间传播；全部文件执行后，任一失败均使脚本返回失败。旧文件仍可能跨模块，层名不保证所有依赖完全隔离。按改动选择适当范围：
 
     python3 scripts/run_tests.py --layer unit
     python3 scripts/run_tests.py --layer contract
+    python3 scripts/run_tests.py --layer conformance
     python3 scripts/run_tests.py --layer integration
     python3 scripts/run_tests.py --layer host
     python3 scripts/run_tests.py --layer smoke
     python3 scripts/run_tests.py --layer all
 
-也可直接运行全部兼容测试文件：
+也可在一个进程中发现全部文件；宿主替身可能影响同进程中的可选宿主测试，宿主验收应使用上面的独立进程入口：
 
     python3 -m unittest discover -s tests -p 'test_*.py' -q
 
-测试不会自动证明真实模型的抽取质量，也不会在没有 AstrBot 的环境里证明宿主行为。模型评估和容量探测属于单独的人工流程；参见 [benchmarks/README.md](../../../benchmarks/README.md)。
+按能力选择 core 检查时，参见 [core 验证入口与证据范围](../architecture/modules/core.md#core-verification)：其中列出现有测试及定向命令，并区分纯规则和完整流程。接口导出检查不等于所有导出操作的完整行为覆盖。
+
+测试不会自动证明真实模型的抽取质量，也不会在没有 AstrBot 的环境里证明宿主行为。跑分与测试的测量范围不同；固定记忆回归会以同一评测器和冻结基线检查逐题退化，失败返回非零；历史综合分不作验收，BM25 另有冻结验收。字数也不等同于 token 或费用；具体定义和限制见 [benchmarks/README.md](../../../benchmarks/README.md)。
+
+## 离线脚本与产物
+
+`scripts/snapshot_db.py` 创建包含 WAL 的一致备份，关闭连接后才原子发布，失败保留原备份；不能把源数据库当作目标。人格初始化、待处理迁移和关系回滚脚本在自身作用域关闭存储。运行服务创建者负责关闭监听端口，保存启动信息失败也会清理。
+
+`benchmarks/run.py`、规模及消融的常规输出位于新的忽略运行目录，不覆盖历史报告。发布打包只是本地产物构建，不代表发布或部署授权。
 
 ## 管理界面
 
