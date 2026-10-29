@@ -17,8 +17,8 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from pathlib import Path
 from threading import Barrier
-from types import ModuleType
-from urllib.parse import quote
+from types import ModuleType, SimpleNamespace
+from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from contract_support import ROOT, validate_contract
@@ -209,6 +209,18 @@ class ConsoleHttpTests(unittest.TestCase):
         old_row = {**row, "run_id": "b" * 32,
                    "at": (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()}
         trace_path.write_text(json.dumps(old_row) + "\n" + json.dumps(row) + "\n{broken\n")
+        writer = module("store.run_trace").TraceStore(trace_path)
+        tracer = module("app.runtime.tracing").RunTracer(writer)
+        extras = {}
+        event = SimpleNamespace(get_extra=extras.get, set_extra=extras.__setitem__)
+        tracer.begin(event)
+        tracer.request(event, {"query": "PRIVATE_SENTINEL", "mode": "strict",
+                               "final_ids": ["n_1"]})
+        tracer.response(event, "error")
+        tracer.done(event, "error")
+        # Reintroduce old/private/corrupt rows after the producer has finished.
+        with trace_path.open("a") as stream:
+            stream.write(json.dumps(old_row) + "\n" + json.dumps(row) + "\n{broken\n")
         original = trace_path.read_bytes()
         self.process = subprocess.Popen(
             [sys.executable, str(ROOT / "scripts/console_http.py"), "--data-dir",
@@ -220,9 +232,20 @@ class ConsoleHttpTests(unittest.TestCase):
         self.port = int(self.process.stdout.readline().strip().rsplit(":", 1)[1])
         self.assertEqual(trace_path.read_bytes(), original)
         trace = self.api("traces")
+        self.assertNotIn("b" * 32, [run["id"] for run in trace["runs"]])
         self.api("traces?state=not_recalled")
         self.assertEqual(trace_path.read_bytes(), original)
-        self.assertEqual(len(trace["events"]), 1)
+        query = urlencode({"run_id": tracer.run_id(event), "status": "error",
+                           "since": writer.snapshot()["runs"][0]["updated_at"]})
+        matched = self.api(f"traces?{query}")
+        self.assertEqual([r["id"] for r in matched["runs"]], [tracer.run_id(event)])
+        self.assertEqual([e["event"] for e in matched["events"]],
+                         ["agent_begin", "llm_request", "llm_response", "agent_done"])
+        self.assertTrue(all(e["status"] == "error" for e in matched["events"][-2:]))
+        self.assertEqual(trace_path.read_bytes(), original)
+        for field in ("run_id", "state", "status", "since", "until"):
+            rejected = self.api(f"traces?{field}=PRIVATE_SENTINEL", expected=400)
+            self.assertNotIn("PRIVATE_SENTINEL", json.dumps(rejected))
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(trace))
         for path in ("/../openapi.yaml", "/assets/%2e%2e/%2e%2e/openapi.yaml", "/main.py"):
             self.assertEqual(self.request(path, auth=False)[0], 404)

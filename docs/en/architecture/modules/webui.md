@@ -29,6 +29,21 @@ Jobs limit manual and scheduled maintenance to one active task. Journal stores b
 
 The root openapi.yaml is the management API source of truth. dashboard/src/contracts/generated.ts is maintained by code generation, while Zod continues to validate runtime inputs. See the [WebUI operations guide](../../guides/webui.md) and [dashboard development setup](../../guides/development.md).
 
+## Run trace queries
+
+Both authenticated entries share `services/trace_query.py` for `GET manage/traces`. It consumes the TraceStore allowlisted snapshot without business-table access or host objects. Requests without parameters preserve the original response. Optional filters combine:
+
+| Parameter | Meaning |
+|---|---|
+| `run_id` | Exact generated 32-character lowercase hexadecimal run ID; never a user or session identifier |
+| `status` | `all`, `running`, `completed`, `error`, or `interrupted` |
+| `since` / `until` | Timezone-aware timestamps matched inclusively against the run's last event; the end cannot precede the start |
+| `state` | Existing recall-flag filter, default `all`; flags may overlap |
+
+Queries cover only retained events and return every available step of matching runs; time bounds do not truncate the start of a timeline. Capacity and retention metadata remain intact. Invalid filters return 400 without echoing input. The page queries through ManagementClient, clears old results when filters change, and discards late responses. Time inputs use the device timezone. Error events identify recorded failure steps; unfinished runs show only the last known step without inferring a cause. Missing or evicted steps remain marked partial.
+
+There is currently no memory-import task API. Persona-pack import is separate from memory import. The console creates no fictional progress; task status awaits an actual service interface.
+
 ## Persona console read models (GitHub #82 / #83)
 
 All routes below use the existing authenticated `WebRoutes` boundary. OpenAPI is

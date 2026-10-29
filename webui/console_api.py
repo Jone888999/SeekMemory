@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..services.management_service import ManagementService
+from ..services.trace_query import query_traces
 
 READ_ACTIONS = frozenset({
     "status", "records", "detail", "events", "traces", "graph", "impressions",
@@ -78,7 +79,7 @@ class ConsoleApi:
         if action == "detail":
             return service.detail(query.get("id", ""))
         if action == "traces":
-            return self.traces(query.get("state", "all"))
+            return query_traces(self.traces, query)
         if action == "events":
             # This service does not run the host's lifecycle jobs.
             return {"events": [], "capacity": 500}

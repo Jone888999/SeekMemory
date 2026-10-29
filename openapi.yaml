@@ -517,6 +517,7 @@ paths:
     get:
       operationId: traces
       summary: 仅管理员读取无正文的运行轨迹
+      description: 宿主无关的运行轨迹查询。筛选在既有白名单及保留窗口内执行；时间范围按运行最后事件时间匹配，响应保留匹配运行的完整可用时间轴。无参数时保留原响应行为。查询不访问内部业务表。
       parameters:
       - name: state
         in: query
@@ -528,6 +529,31 @@ paths:
           - recalled_but_withheld
           - recalled_and_injected
           - fallback_used
+      - name: status
+        in: query
+        description: 运行结果；unknown 工具结果不推断为成功或失败。
+        schema:
+          type: string
+          enum: [all, running, completed, error, interrupted]
+          default: all
+      - name: run_id
+        in: query
+        description: 精确匹配生成的运行编号，不接受用户或会话标识。
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{32}$
+      - name: since
+        in: query
+        description: 最后事件时间下界，含边界；必须含时区。
+        schema:
+          type: string
+          format: date-time
+      - name: until
+        in: query
+        description: 最后事件时间上界，含边界；必须含时区且不早于 since。
+        schema:
+          type: string
+          format: date-time
       responses:
         '200':
           description: 操作成功

@@ -40,6 +40,8 @@
 
 ### 中文
 
+- 运行轨迹新增宿主无关的运行编号、结果及时间范围查询，AstrBot 与独立 HTTP 共用契约；控制台可定位已记录的失败步骤，并标明未结束或不完整时间轴。保留既有白名单、只读边界和响应格式；切换查询时丢弃迟到结果，不新增数据库或公开配置。
+
 - 修复独立控制台启动和读取时隐式裁剪历史 trace；轨迹只读筛选，不改写原文件。HTTP 连接并行读写，管理操作继续在单个 SQLite 所属线程串行执行，避免空闲连接阻塞正常请求；保持 API、配置与数据格式兼容。
 
 - 新增本机独立控制台：无需启动 AstrBot 即可通过 HTTP API 查看和编辑记忆、管理人格包及运行只读诊断。支持可配置 API 地址和独立管理员令牌；令牌仅在页面内存保存，断开或过期后需重新连接。新增 `SEEKMEMORY_CONSOLE_TOKEN` 与独立启动参数，保留旧宿主入口及数据格式；首版不运行后台维护、远程部署或导入任务 API。
@@ -81,6 +83,8 @@
 - 人格控制台接入历史版本回滚、差异比较与变化原因；安装时校验预览内容，按版本显示已安装状态；Dream 日志区分预算停止与完成，并显示调度开关。新增控制台接口需与 dashboard 同步更新，不涉及数据库迁移或配置变化（#82 / #83）。
 
 ### English
+
+- Add host-neutral run ID, result and time-range queries with a shared contract for AstrBot and standalone HTTP. The console locates recorded failure steps and marks unfinished or partial timelines. Preserve the allowlist, read-only boundary and response format, discard late query results, and add no database or public configuration changes.
 
 - Fix implicit pruning of historical traces when starting or reading the standalone console; filter traces read-only without rewriting the original file. Handle HTTP connections concurrently while serializing management operations on the SQLite owner thread, so idle connections do not block normal requests. API, configuration, and data formats remain compatible.
 

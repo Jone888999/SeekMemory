@@ -22,9 +22,14 @@ export function managementClient(
 ): ManagementClient {
   return {
     console: consoleClient(bridge),
-    async traces() {
+    async traces(query = {}) {
       const host = await bridge()
-      return tracesSchema.parse(await host.apiGet("manage/traces"))
+      const fields = Object.fromEntries(
+        Object.entries(query).filter(
+          ([, value]) => value !== undefined && value !== ""
+        )
+      )
+      return tracesSchema.parse(await host.apiGet("manage/traces", fields))
     },
     async records() {
       const host = await bridge()

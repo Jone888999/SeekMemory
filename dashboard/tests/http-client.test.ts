@@ -82,6 +82,29 @@ void test("HTTP client reads and edits through the real standalone API without a
     { cwd: root, encoding: "utf8" }
   )
   assert.equal(seeded.status, 0, seeded.stderr)
+  const traced = spawnSync(
+    python,
+    [
+      "-c",
+      `
+from pathlib import Path
+from types import SimpleNamespace
+from store.run_trace import TraceStore
+from app.runtime.tracing import RunTracer
+import sys
+extras = {}
+event = SimpleNamespace(get_extra=extras.get, set_extra=extras.__setitem__)
+tracer = RunTracer(TraceStore(Path(sys.argv[1]) / "run_traces.jsonl"))
+tracer.begin(event)
+tracer.request(event, {"query": "PRIVATE_TRACE_SENTINEL", "final_ids": ["n_1"]})
+tracer.response(event, "error")
+tracer.done(event, "error")
+`,
+      data,
+    ],
+    { cwd: root, encoding: "utf8" }
+  )
+  assert.equal(traced.status, 0, traced.stderr)
   const server = spawn(
     python,
     ["scripts/console_http.py", "--data-dir", data, "--port", "0"],
@@ -150,7 +173,27 @@ void test("HTTP client reads and edits through the real standalone API without a
     assert.ok(client.console)
     await client.console.graph()
     await client.console.pack("official/big_fish")
-    await client.traces()
+    const traces = await client.traces()
+    const run = traces.runs[0]
+    assert.ok(run)
+    const filtered = await client.traces({
+      run_id: run.id,
+      status: "error",
+      state: "recalled_and_injected",
+      since: run.updated_at,
+      until: run.updated_at,
+    })
+    assert.deepEqual(filtered, traces)
+    assert.deepEqual(
+      filtered.events.map((step) => step.event),
+      ["agent_begin", "llm_request", "llm_response", "agent_done"]
+    )
+    assert.ok(!JSON.stringify(filtered).includes("PRIVATE_TRACE_SENTINEL"))
+    assert.equal((await client.traces({ status: "completed" })).runs.length, 0)
+    await assert.rejects(
+      client.traces({ since: "PRIVATE_TRACE_SENTINEL" }),
+      /参数无效/
+    )
     await assert.rejects(client.task("weekly"), /未启用/)
     await assert.rejects(
       httpClient(url, "invalid", {
