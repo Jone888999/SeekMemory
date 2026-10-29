@@ -34,4 +34,4 @@ Cache 仅持有 active Artifact，并维护 family、level、subject 索引。�
 
 ## 恢复与诊断
 
-Artifact 版本快照和证据是审计事实；ledger 的哈希链用于检查账本连续性。Runtime episodes、Dream 状态和 Run Trace 分属不同用途，不能拿诊断轨迹代替 Artifact 变更账本。旧行解析、schema 演进和仓储实现都留在 store。
+Artifact 版本快照和证据是审计事实；ledger 的哈希链用于检查账本连续性。Runtime episodes、Dream 状态和 Run Trace 分属不同用途，不能拿诊断轨迹代替 Artifact 变更账本。旧行解析、schema 演进和仓储实现都留在 store。TraceStore 的只读模式在内存中校验与筛选事件，拒绝追加，初始化和 snapshot 均不创建、裁剪或重写文件；写入模式继续由生产者执行持久化和保留清理。

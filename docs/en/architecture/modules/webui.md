@@ -9,7 +9,7 @@
 
 ## Independent HTTP boundary
 
-`scripts/console_http.py` starts `adapters/console/server.py`. Its `runtime.py` composes the existing Store, Cache, RecallService, ManagementService, StatusService, and PersonaPacks. Production operations use application services; HTTP dispatch accesses no database and imports no AstrBot modules. HTTPServer handles requests sequentially so SQLite creation, use, and cleanup stay on one thread.
+`scripts/console_http.py` starts `adapters/console/server.py`. Its `runtime.py` composes the existing Store, Cache, RecallService, ManagementService, StatusService, and PersonaPacks. Production operations use application services; HTTP dispatch accesses no database and imports no AstrBot modules. HTTP connections read and write concurrently; parsed requests run serially on one management worker, which also creates and closes SQLite. Idle connections and incomplete request bodies do not occupy the database worker. Shutdown drains connection handlers before closing the database.
 
 `openapi.yaml` defines `/manage/<action>` paths with `/api` and `/astrbot_plugin_seekmemory` server prefixes. Existing AstrBot URLs, request bodies, and error envelopes remain compatible. Every standalone API read and write checks the Bearer token, Host, and origin. Binding is local, development origins require explicit permission, request sizes are bounded, and token-bearing requests disable caching and redirects. Static serving exposes only built entry files and assets, never the data directory.
 

@@ -44,7 +44,7 @@ class ConsoleRuntime:
             self.status_service = StatusService(
                 artifacts=self.store.artifacts, ledger=self.store.ledger,
             )
-            self.traces = TraceStore(data_dir / "run_traces.jsonl")
+            self.traces = TraceStore(data_dir / "run_traces.jsonl", read_only=True)
         except BaseException:
             self.store.close()
             raise

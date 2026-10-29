@@ -34,4 +34,4 @@ Cache holds active Artifacts only and indexes them by family, level, and subject
 
 ## Recovery and diagnostics
 
-Artifact version snapshots and evidence are audit facts; the ledger hash chain checks ledger continuity. Runtime episodes, Dream state, and Run Trace have separate purposes. A diagnostic timeline is not a substitute for the Artifact change ledger. Legacy row parsing, schema evolution, and repository implementation stay inside store.
+Artifact version snapshots and evidence are audit facts; the ledger hash chain checks ledger continuity. Runtime episodes, Dream state, and Run Trace have separate purposes. A diagnostic timeline is not a substitute for the Artifact change ledger. Legacy row parsing, schema evolution, and repository implementation stay inside store. TraceStore read-only mode validates and filters events in memory, rejects appends, and never creates, prunes, or rewrites files during initialization or snapshots. Producer write mode retains ownership of persistence and retention cleanup.

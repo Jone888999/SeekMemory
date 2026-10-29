@@ -17,8 +17,9 @@ except ImportError:  # Standalone tests use the repository as the import root.
 
 class TraceStore:
     def __init__(self, path: Path, *, retention_days: int = 7, max_rows: int = 5000,
-                 clock=time.time) -> None:
+                 clock=time.time, read_only: bool = False) -> None:
         self.path = Path(path)
+        self.read_only = read_only
         self.retention_days = max(1, min(365, int(retention_days)))
         self.max_rows = max(1, min(5000, int(max_rows)))
         self.clock = clock
@@ -41,7 +42,8 @@ class TraceStore:
                                 UnicodeDecodeError):
                             continue
                 self.events = self._retained(self.events)
-                self._persist(self.events)
+                if not self.read_only:
+                    self._persist(self.events)
         except OSError:
             self.persistence_error = True
 
@@ -63,6 +65,8 @@ class TraceStore:
                 os.unlink(name)
 
     def append(self, row: dict) -> None:
+        if self.read_only:
+            raise PermissionError("trace_store_is_read_only")
         with self._lock:
             try:
                 row = clean_event(row)
@@ -88,7 +92,7 @@ class TraceStore:
             raise ValueError("unknown_trace_filter")
         with self._lock:
             rows = self._retained(self.events)
-            if len(rows) != len(self.events):
+            if not self.read_only and len(rows) != len(self.events):
                 try:
                     self._persist(rows)
                     self.events = rows

@@ -7,11 +7,16 @@ import importlib
 import json
 import os
 import select
+import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from pathlib import Path
+from threading import Barrier
 from types import ModuleType
 from urllib.parse import quote
 
@@ -61,8 +66,8 @@ class ConsoleHttpTests(unittest.TestCase):
 
     def request(self, path: str, method: str = "GET", body: object = None,
                 *, auth: bool = True, headers: dict | None = None,
-                raw: bytes | None = None):
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+                raw: bytes | None = None, timeout: float = 5):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
         try:
             fields = {"Authorization": f"Bearer {self.token}"} if auth else {}
             fields.update(headers or {})
@@ -132,6 +137,45 @@ class ConsoleHttpTests(unittest.TestCase):
                          {"Original fact", "Updated fact"})
         self.assertEqual(len(detail["ledger"]), 2)
 
+    def test_idle_connections_do_not_block_authenticated_requests(self) -> None:
+        with ExitStack() as connections:
+            for _ in range(2):
+                connections.enter_context(socket.create_connection(("127.0.0.1", self.port)))
+            status, _, raw = self.request("/api/manage/status", timeout=2)
+            self.assertEqual(status, 200, raw)
+            validate_contract("status", json.loads(raw))
+            self.api("update", "POST", {
+                "id": self.art.header.id, "expectedRevision": 1,
+                "payload": {"text": "Updated while idle", "level": "fact"},
+                "scope": "private", "state": "active", "reason": "Correction", "confirmed": True,
+            })
+
+    def test_concurrent_updates_keep_one_revision_and_ledger_entry(self) -> None:
+        barrier = Barrier(2)
+
+        def update(text: str) -> int:
+            barrier.wait(timeout=5)
+            status, _, _ = self.request("/api/manage/update", "POST", {
+                "id": self.art.header.id, "expectedRevision": 1,
+                "payload": {"text": text, "level": "fact"},
+                "scope": "private", "state": "active", "reason": "Correction", "confirmed": True,
+            })
+            return status
+
+        with ThreadPoolExecutor(max_workers=2) as clients:
+            self.assertEqual(sorted(clients.map(update, ("First edit", "Second edit"))), [200, 409])
+        detail = self.api(f"detail?id={quote(self.art.header.id)}")
+        self.assertEqual(detail["artifact"]["header"]["revision"], 2)
+        self.assertEqual(len(detail["versions"]), 2)
+        self.assertEqual(len(detail["ledger"]), 2)
+        self.assertTrue(all(check["ok"] for check in self.api("status")["checks"]))
+
+    def test_interrupt_closes_runtime_on_its_owner_thread(self) -> None:
+        self.api("status")
+        self.process.send_signal(signal.SIGINT)
+        _, stderr = self.process.communicate(timeout=10)
+        self.assertEqual(self.process.returncode, 0, stderr)
+
     def test_persona_preview_conflict_artwork_and_diagnostics(self) -> None:
         preview = self.api("pack?reference=official/big_fish")
         self.api("packExport?reference=official/big_fish")
@@ -155,12 +199,17 @@ class ConsoleHttpTests(unittest.TestCase):
         # Reload in a new process to exercise persisted trace revalidation.
         self.process.terminate()
         self.process.communicate(timeout=10)
-        from datetime import datetime, timezone
-        (self.data / "run_traces.jsonl").write_text(json.dumps({
+        from datetime import datetime, timedelta, timezone
+        trace_path = self.data / "run_traces.jsonl"
+        row = {
             "run_id": "a" * 32, "sequence": 1, "event": "agent_begin",
             "at": datetime.now(timezone.utc).isoformat(), "status": "running",
             "message": "PRIVATE_SENTINEL", "subject_id": "PRIVATE_SENTINEL",
-        }) + "\n")
+        }
+        old_row = {**row, "run_id": "b" * 32,
+                   "at": (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()}
+        trace_path.write_text(json.dumps(old_row) + "\n" + json.dumps(row) + "\n{broken\n")
+        original = trace_path.read_bytes()
         self.process = subprocess.Popen(
             [sys.executable, str(ROOT / "scripts/console_http.py"), "--data-dir",
              str(self.data), "--port", "0"], cwd=ROOT,
@@ -169,7 +218,10 @@ class ConsoleHttpTests(unittest.TestCase):
         )
         self.assertTrue(select.select([self.process.stdout], [], [], 10)[0])
         self.port = int(self.process.stdout.readline().strip().rsplit(":", 1)[1])
+        self.assertEqual(trace_path.read_bytes(), original)
         trace = self.api("traces")
+        self.api("traces?state=not_recalled")
+        self.assertEqual(trace_path.read_bytes(), original)
         self.assertEqual(len(trace["events"]), 1)
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(trace))
         for path in ("/../openapi.yaml", "/assets/%2e%2e/%2e%2e/openapi.yaml", "/main.py"):

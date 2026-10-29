@@ -7,12 +7,12 @@ import hmac
 import json
 import mimetypes
 import os
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from ...webui.console_api import ApiResponse, ConsoleApi, error
-from .runtime import ConsoleRuntime
+from ...webui.console_api import ApiResponse, error
+from .worker import ConsoleWorker
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -27,10 +27,12 @@ def local_origin(value: str) -> str:
     return f"http://{parsed.netloc}"
 
 
-class ConsoleServer(HTTPServer):
-    """Serve requests sequentially on the thread that owns SQLite."""
+class ConsoleServer(ThreadingHTTPServer):
+    """Read connections concurrently, then serialize management work separately."""
 
-    def __init__(self, port: int, api: ConsoleApi, token: str, *,
+    daemon_threads = False  # Drain handlers before closing the runtime worker.
+
+    def __init__(self, port: int, api: ConsoleWorker, token: str, *,
                  static_dir: Path = ROOT / "pages/memory",
                  allowed_origins: tuple[str, ...] = ()) -> None:
         if len(token) < 32 or not token.isascii() or any(c.isspace() for c in token):
@@ -167,16 +169,11 @@ def main(argv: list[str] | None = None) -> int:
         origins = tuple(local_origin(value) for value in args.allow_origin)
     except ValueError as exc:
         parser.error(str(exc))
-    runtime = ConsoleRuntime(args.data_dir.expanduser().resolve())
-    try:
-        api = ConsoleApi(runtime.management, status=runtime.status,
-                         traces=runtime.traces.snapshot)
+    with ConsoleWorker(args.data_dir.expanduser().resolve()) as api:
         with ConsoleServer(args.port, api, token, allowed_origins=origins) as server:
             print(f"SeekMemory console: http://127.0.0.1:{server.server_port}", flush=True)
             try:
                 server.serve_forever()
             except KeyboardInterrupt:
                 pass
-    finally:
-        runtime.close()
     return 0

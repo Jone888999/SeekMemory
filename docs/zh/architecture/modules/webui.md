@@ -9,7 +9,7 @@
 
 ## 独立 HTTP 边界
 
-`scripts/console_http.py` 启动 `adapters/console/server.py`，`runtime.py` 组合既有 Store、Cache、RecallService、ManagementService、StatusService 和 PersonaPacks。生产调用通过应用用例读写，HTTP 分发不访问数据库，也不导入 AstrBot。HTTPServer 顺序处理请求，SQLite 的创建、使用和关闭位于同一线程。
+`scripts/console_http.py` 启动 `adapters/console/server.py`，`runtime.py` 组合既有 Store、Cache、RecallService、ManagementService、StatusService 和 PersonaPacks。生产调用通过应用用例读写，HTTP 分发不访问数据库，也不导入 AstrBot。HTTP 连接在线程间并行读写，完成请求解析后交给单个管理工作线程串行执行；SQLite 的创建、使用和关闭均位于该工作线程。空闲连接或尚未传完的请求体不占用数据库工作线程，关闭服务时先等待连接处理结束再关闭数据库。
 
 `openapi.yaml` 使用 `/manage/<action>` 操作路径，服务器前缀分别为 `/api` 与 `/astrbot_plugin_seekmemory`。现有 AstrBot URL、请求体和错误结构保持兼容。独立 API 对所有读写操作校验 Bearer 令牌、Host 和来源；只允许本机监听与明确的开发 origin，限制请求大小，禁止缓存与重定向携带令牌。静态服务仅开放构建入口和 assets，不开放数据目录。
 
