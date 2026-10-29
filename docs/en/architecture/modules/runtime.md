@@ -40,3 +40,19 @@ runtime_gate_enabled defaults to false. While disabled, wait and background defe
 RunRecorder is the single runtime write-back coordinator for Sources, pending projection, checkpoint, and episodes. run_id and deterministic Source IDs prevent repeated callbacks from duplicating writes. runtime_episodes is append-only business audit metadata; RunTracer/TraceStore is a field-whitelisted diagnostic timeline. They are separate and neither stores conversation bodies.
 
 ToolPolicy can remove disallowed tools from req.func_tool before the model request. A post-call tool observation hook is diagnostic and cannot block execution by itself. Actual request filtering is controlled by runtime_tool_filter_enabled and is disabled by default.
+
+## Write-back after delivery
+
+Runtime retains a process-local receipt immediately after confirmed sending. Session acknowledgement, Source/projection and audit complete in stages; failures return `RunResult(delivered=True, error="writeback_pending")` without generating or sending again. `AgentRuntime.retry_writebacks()` returns completed write-back items. The worker calls it before checking speaking enablement and again on shutdown. Unfinished session delivery blocks new background sends while normal input remains accepted. Even when normal reply persistence fails, prepared identity remains available to bind host delivery; the callback acknowledges state before retrying Source and audit.
+
+RunRecorder retains completion positions for Source, projection and individual reinforcement IDs, retrying only missing stages. New repository audit IDs derive from session/run identity; historical rows remain unchanged. State read errors no longer masquerade as empty sessions; state/audit writes retain last_error and raise so orchestration can retry. Diagnostics remain isolated. Failed file replacement preserves both durable and cached old state.
+
+Receipts and compensation are not durable across processes. Crashes and unknown send outcomes may still trigger retries; this is not an exactly-once delivery guarantee across restarts.
+
+## Internal files and resources
+
+The facade remains in runtime.py; transitions.py computes detached state only, dispatch.py executes background work through ports, and writeback.py manages confirmed-delivery recovery. These do not import AgentRuntime. recorder.py remains the single Source/projection/reinforcement/audit coordinator. Existing state/episode/action storage adapters, host tracing and tool filtering remain in place. Source comments use English followed by equivalent Chinese; the app module page inventories interfaces.
+
+File audit retries recognize complete saved rows through existing `session_id/run_id` fields. An uncertain append reloads persisted identities before retrying. This covers a single instance and complete rows seen by a new instance, not cross-process file locking, and adds no file fields.
+
+Memory context construction uses the pure `RecallService.query()`. Explicit inclusion recording is forwarded through the optional generic `MemoryContextRecorder`; ordinary host hooks call it after request attachment, background dispatch immediately before model invocation. The runtime contains no designated rules. Existing `RecallService.build()` remains a compatibility query-plus-recording entry.

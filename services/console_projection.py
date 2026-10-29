@@ -1,4 +1,7 @@
-"""Bounded, read-only console projections. No Source bodies or write side effects."""
+"""Read bounded console projections; no Source bodies or writes.
+
+读取有数量上限的控制台视图，不读取原始消息正文或执行写入。
+"""
 from __future__ import annotations
 
 try:
@@ -10,16 +13,19 @@ except ImportError:
 
 
 def protected(art: Artifact) -> bool:
+    """Decide whether a management card must hide its text / 判断管理卡片是否需要隐藏正文。"""
     return art.header.scope == "shadow" or art.header.family in {"secret", "designated"}
 
 
 def kind(art: Artifact) -> str:
+    """Read the displayed family or memory level / 读取展示用类型或记忆层级。"""
     if art.header.family == "memory":
         return str(art.payload.get("level", "detail"))
     return art.header.family
 
 
 def graph(artifacts: ArtifactStore, *, limit: int = 120) -> dict:
+    """Read a bounded graph projection without Source bodies / 读取有数量上限且不含原始消息正文的图视图。"""
     rows = artifacts.list_recent(limit)
     edge_limit = limit * 2
     nodes = [{
@@ -34,6 +40,10 @@ def graph(artifacts: ArtifactStore, *, limit: int = 120) -> dict:
     edges = {}
 
     def add(source: str, target: str, relation: str) -> None:
+        """Add a bounded unique node to the projection.
+
+        向投影加入有数量上限的唯一节点。
+        """
         if source != target and source in visible and target in visible and len(edges) < edge_limit:
             key = (min(source, target), max(source, target), relation)
             edges[key] = {"source": source, "target": target, "kind": relation}
@@ -58,6 +68,7 @@ def graph(artifacts: ArtifactStore, *, limit: int = 120) -> dict:
 
 
 def impressions(artifacts: ArtifactStore, *, offset: int, limit: int) -> dict:
+    """Read one bounded management impression page / 读取一页有数量上限的管理印象。"""
     rows = artifacts.list_impressions(limit=limit, offset=offset)
     cards = []
     for art in rows:
@@ -78,7 +89,12 @@ def impressions(artifacts: ArtifactStore, *, offset: int, limit: int) -> dict:
 
 
 def dreams(rows: list[dict]) -> dict:
+    """Project recent run counts without prompts or responses / 转换近期运行计数，不包含提示词或回复。"""
     def count(value: object) -> int:
+        """Normalize a nonnegative numeric run count.
+
+        整理非负数值运行计数。
+        """
         return max(0, int(value)) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
     entries = []
     for row in rows[:100]:

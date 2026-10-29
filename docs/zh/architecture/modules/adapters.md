@@ -6,7 +6,7 @@ adapters 把 AstrBot 事件、provider 和消息发送映射到应用端口。�
 
 ## 组合根
 
-AstrBotPlugin 在 start 时建立 Store、Cache、Tree、Graph、HybridRetriever、Source-backed Buffer、CheckpointManager、各应用服务、AgentRuntime、Jobs、WebRoutes 与后台服务；stop 时依次停止后台任务与管理任务、注销本实例路由、保存缓冲、flush checkpoint，最后关闭 Store。
+AstrBotPlugin 在 start 时建立 Store、Cache、TreeService、Graph、HybridRetriever、Source-backed Buffer、CheckpointManager、各应用服务、AgentRuntime、Jobs、WebRoutes 与后台服务；stop 时依次停止后台任务与管理任务、注销本实例路由、保存缓冲、flush checkpoint，最后关闭 Store。
 
 main.py 定义插件入口并委托 lifecycle；组合和 wiring 位于 adapters/astrbot/plugin.py。AstrBotPlugin 显式持有 hooks 与 attention 组件，不再通过多继承共享宿主状态。AstrBotHooks 在 adapters/astrbot/hooks.py 把宿主 hook 映射为服务调用：访问策略、输入接收、记忆注入、助手回复捕获、实际发送后的交付记录、运行时/工具观测。它不实现抽取、容量或维护算法。
 
@@ -46,3 +46,25 @@ subject_key 表示稳定记忆归属，session_id 表示本轮运行会话，二
 DSH 每个宿主上下文只注册一次；卸载会撤销钩子、取消桥接请求并清空上下文缓存，迟到的响应不再注入。仓库现在还提供 `scripts/runtime_http.py` 真实 Python 本机服务入口，以及让 DSH RuntimeBridge 驱动它的 Node 集成测试。
 
 关系模式默认为 observe：RelationshipInteractionPolicy 可以计算无正文的候选交互档案，但默认不会注入 directive 或拒绝回复。拒绝回复必须同时满足显式 `relationship_mode=enforce` 和现有 `runtime_gate_enabled=true`；allowed/neutral 关系不会启用该 gate。仅在显式启用 enforcement 时，low/dislike 的普通私聊陈述才按 Source ID 做稳定 `0.8`/`0.5` 采样；真实问题和宿主 direct signal 仍是 required reply。相同的显式 enforcement 控制下，low/dislike 群聊 ambient 被拒绝。Relationship Artifact 不进入 Recall 或管理目录。
+
+## 明确接口及宿主依赖
+
+`adapters/domain.py` 导出不依赖 SDK 的共享人格文件及关系适配，`adapters/ports.py` 复用应用协议。`adapters/astrbot/domain.py` 导出 AstrBot 集成入口，有意依赖其 SDK；不依赖 SDK 的事件、运行时、时间、动作及上下文映射仍可从各自原文件导入。`adapters/astrbot/ports.py` 声明有限的 `HookHost`、`ProviderHost` 和 `MessageHost` 视图。
+
+钩子和注意力不再转发任意未知属性，`_bindings` 明确提供有文档和类型的宿主能力视图；独立测试转接可在本地绑定相同字段。宿主仍唯一持有就绪状态、服务、仓储及运行审计清理时间戳。钩子内部工具关联与宿主资源所有权分开。
+
+| 文件 | 职责及副作用 | 逻辑复杂度及耦合 |
+|---|---|---|
+| `astrbot/plugin.py` | 按依赖顺序构造资源，按生命周期顺序关闭 | 高：组装根，不实现记忆算法 |
+| `astrbot/hooks.py`、`attention.py` | 映射回调并应用既有运行时、权限及交互决策 | 中至高：有限有类型宿主视图，不任意转发 |
+| `astrbot/registration.py` | 稳定回调模块、名称、优先级及顺序 | 低：仅 SDK 注册，旧 hooks 导入保留别名 |
+| `astrbot/events.py`、`runtime.py` | 事件、回执及附加关联映射 | 中：不导入 SDK 事件类型或实现持久化规则 |
+| `astrbot/actions.py`、`model.py`、`context.py` | 宿主发送、提供方调用及明确上下文记录转发 | 低：注入的窄宿主能力 |
+| `astrbot/time.py`、`topics.py` | 既有 UTC+8 写读视图及原始消息支持的话题候选 | 中：转换及队列视图，不添加时间规则 |
+| `persona_packs.py`、`relationship_policy.py` | 人工本地文件及已验证关系视图 | 中：格式及访问规则仍由原职责文件管理 |
+
+`tests/test_adapter_interface_contract.py` 保护共享导出及协议；运行时插件测试保护有限依赖及回调身份、顺序。既有宿主生命周期、取消、上下文、动作及时间钩子检查仍需执行。UTC+8 实现以移除说明字符串后的语法树比较，确认逻辑不变。管理路由、Node 及前端实现不在结构整理范围内。
+
+后台 RunContext 使用的已观察机器人身份归宿主持有。仅用于回调的工具尝试归 AstrBotHooks 管理，资源清理后清空，避免重启后将旧工具回执交给新执行器完成。宿主生命周期回归覆盖身份捕获、停止清理及重启。
+
+已提交编号的缓存补偿通过 `app.CacheRepairs` 共享；组装根将同一实例注入检查点、抽取、上下文及维护写入协调器。业务计划仍归各用例，按所有者计数避免无关补偿混入检查点待处理总数。

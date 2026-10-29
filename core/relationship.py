@@ -1,4 +1,7 @@
-"""Pure persistent relationship snapshots and band transitions."""
+"""Define relationship snapshots and hysteresis rules without storage I/O.
+
+定义关系快照及迟滞规则，不读写存储。
+"""
 
 from __future__ import annotations
 
@@ -8,11 +11,27 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping
 
+# Persisted policy identity; consumers must import this definition.
 RELATIONSHIP_POLICY_VERSION = "relationship-v1"
+
+# Internal confidence and affinity thresholds, separate from configurable weights.
 HARD_GATE_CONFIDENCE = 0.60
+_DISLIKE_ENTRY = -0.50
+_DISLIKE_EXIT = -0.25
+_LOW_ENTRY = -0.20
+_LOW_EXIT = -0.10
+_CLOSE_ENTRY = 0.60
+_CLOSE_EXIT = 0.50
+_WARM_ENTRY = 0.20
+_WARM_EXIT = 0.10
 
 
 class RelationshipBand(str, Enum):
+    """Define persisted bands shared by decisions and payload validation.
+
+    定义决策及内容校验共用的持久化档位词表。
+    """
+
     CLOSE = "close"
     WARM = "warm"
     NEUTRAL = "neutral"
@@ -23,6 +42,10 @@ class RelationshipBand(str, Enum):
 
 @dataclass(frozen=True)
 class RelationshipSnapshot:
+    """Carry a validated relationship view with affinity, confidence and band.
+
+    携带包含亲近度、置信度及档位的已校验关系视图。
+    """
     subject_id: str = ""
     affinity: float = 0.0
     confidence: float = 0.0
@@ -35,7 +58,10 @@ class RelationshipSnapshot:
 
 
 def relationship_id(subject_id: str) -> str:
-    """Return a stable opaque Artifact id for one global person relationship."""
+    """Generate an opaque stable Artifact identity for one global person relationship.
+
+    为一个全局人物关系生成不透明稳定 Artifact 编号。
+    """
     subject = str(subject_id or "").strip()
     if not subject:
         raise ValueError("relationship subject_id is required")
@@ -44,6 +70,10 @@ def relationship_id(subject_id: str) -> str:
 
 
 def summary_for(band: RelationshipBand) -> str:
+    """Read the fixed summary text for the supplied band.
+
+    读取给定档位的固定概述文本。
+    """
     return {
         RelationshipBand.CLOSE: "关系状态：亲近",
         RelationshipBand.WARM: "关系状态：温暖",
@@ -60,7 +90,10 @@ def band_for(
     previous: RelationshipBand = RelationshipBand.NEUTRAL,
     positive_evidence: bool = False,
 ) -> RelationshipBand:
-    """Classify a bounded affinity using hysteresis around stable bands."""
+    """Classify bounded affinity with hysteresis around stable bands.
+
+    以稳定档位周围的迟滞规则划分有界亲近度。
+    """
     value = float(affinity)
     certainty = float(confidence)
     if not math.isfinite(value) or not math.isfinite(certainty):
@@ -69,21 +102,21 @@ def band_for(
         raise ValueError("relationship values are outside their bounds")
 
     if previous is RelationshipBand.DISLIKE:
-        if value <= -0.25 or not positive_evidence:
+        if value <= _DISLIKE_EXIT or not positive_evidence:
             return RelationshipBand.DISLIKE
-    if value <= -0.50 and certainty >= HARD_GATE_CONFIDENCE:
+    if value <= _DISLIKE_ENTRY and certainty >= HARD_GATE_CONFIDENCE:
         return RelationshipBand.DISLIKE
-    if previous is RelationshipBand.LOW and value < -0.10:
+    if previous is RelationshipBand.LOW and value < _LOW_EXIT:
         return RelationshipBand.LOW
-    if value <= -0.20:
+    if value <= _LOW_ENTRY:
         return RelationshipBand.LOW
-    if previous is RelationshipBand.CLOSE and value >= 0.50:
+    if previous is RelationshipBand.CLOSE and value >= _CLOSE_EXIT:
         return RelationshipBand.CLOSE
-    if value >= 0.60 and certainty >= HARD_GATE_CONFIDENCE:
+    if value >= _CLOSE_ENTRY and certainty >= HARD_GATE_CONFIDENCE:
         return RelationshipBand.CLOSE
-    if previous is RelationshipBand.WARM and value >= 0.10:
+    if previous is RelationshipBand.WARM and value >= _WARM_EXIT:
         return RelationshipBand.WARM
-    if value >= 0.20:
+    if value >= _WARM_ENTRY:
         return RelationshipBand.WARM
     return RelationshipBand.NEUTRAL
 
@@ -95,7 +128,10 @@ def snapshot_from_payload(
     artifact_id: str,
     revision: int,
 ) -> RelationshipSnapshot:
-    """Build a validated runtime snapshot from an Artifact payload."""
+    """Validate an Artifact payload and construct a runtime relationship snapshot.
+
+    校验 Artifact 内容并构造运行时关系快照。
+    """
     if not isinstance(payload, Mapping):
         raise ValueError("relationship payload must be a mapping")
     affinity = _finite(payload.get("affinity"), -1.0, 1.0, "affinity")
