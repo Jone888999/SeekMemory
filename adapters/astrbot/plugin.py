@@ -178,6 +178,8 @@ class AstrBotPlugin(star.Star):
             config=self._c,
             owner_umo=lambda: self.owner_umo,
             hybrid_retriever=self.hybrid_retriever,
+            tree=self.tree,
+            tree_enabled=False,  # Internal rollout: preserve flat recall until comparison.
             log=lambda msg: logger.info(f"[seekmemory] {msg}"),
         )
         management = ManagementService(

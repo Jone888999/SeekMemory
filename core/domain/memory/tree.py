@@ -1,51 +1,54 @@
-"""Bounded read-only ancestry over existing tree edges / 基于现有树连接的有界只读祖先查询。"""
+"""Bounded multi-parent ancestry over existing parent-scoped tree edges.
 
+基于现有父节点作用域树边的有界多父祖先查询。
+"""
 from __future__ import annotations
 
 from ...port.tree import TreeEdgeReader
 
 EDGE_PREFIX = "tree_child:"
-DEFAULT_MAX_DEPTH = 32
 
 
 def tree_child_kind(parent_id: str) -> str:
-    """Encode the existing parent-scoped edge kind / 使用既有父节点作用域编码连接类型。"""
+    """Encode the parent-scoped edge kind / 编码父节点作用域边类型。"""
     return EDGE_PREFIX + parent_id
 
 
-def parent_id(node_id: str, edges: TreeEdgeReader) -> str | None:
-    """Find one unambiguous parent; ignore child links and unrelated edges / 查找唯一父节点，忽略子节点和无关连接。"""
-    if not node_id:
-        return None
-    found: str | None = None
-    for edge in edges.edges_of(node_id):
-        if len(edge) < 2:
-            continue
-        other, kind = edge[0], edge[1]
-        if not other or other == node_id or kind != tree_child_kind(other):
-            continue
-        if found is not None and found != other:
-            return None
-        found = other
-    return found
+def parent_ids(node_id: str, edges: TreeEdgeReader, *, limit: int = 8) -> tuple[str, ...]:
+    """Return distinct parents encoded on adjacent edges, never child/unrelated edges.
 
-
-def ancestor_ids(node_id: str, edges: TreeEdgeReader, *,
-                 max_depth: int = DEFAULT_MAX_DEPTH) -> tuple[str, ...]:
-    """Walk upward at most max_depth steps; stop at cycles or ambiguity.
-
-    最多向上读取 max_depth 层；遇到环或多父节点即停止，不修改存储。
+    仅从相邻树边取不同父节点，不把子节点或无关边当作父节点。
     """
-    if type(max_depth) is not int or max_depth < 1:
-        raise ValueError("max_depth must be a positive integer")
-    result: list[str] = []
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    if not node_id:
+        return ()
+    return tuple(edges.tree_parents(node_id, limit))
+
+
+def ancestor_ids(node_id: str, edges: TreeEdgeReader, *, max_depth: int = 3,
+                 max_visits: int = 32, max_parents: int = 8) -> tuple[str, ...]:
+    """Breadth-first ancestry with path deduplication and independent work limits.
+
+    广度查询祖先，按路径去重并分别限制深度、总访问数和每节点父数。
+    """
+    if min(max_depth, max_visits, max_parents) < 1:
+        raise ValueError("tree limits must be positive")
+    found: list[str] = []
     seen = {node_id}
-    current = node_id
+    frontier = [node_id] if node_id else []
     for _ in range(max_depth):
-        parent = parent_id(current, edges)
-        if parent is None or parent in seen:
+        following: list[str] = []
+        for current in frontier:
+            for parent in parent_ids(current, edges, limit=max_parents):
+                if parent in seen:
+                    continue
+                seen.add(parent)
+                found.append(parent)
+                following.append(parent)
+                if len(found) >= max_visits:
+                    return tuple(found)
+        frontier = following
+        if not frontier:
             break
-        result.append(parent)
-        seen.add(parent)
-        current = parent
-    return tuple(result)
+    return tuple(found)

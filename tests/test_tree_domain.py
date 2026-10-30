@@ -1,53 +1,49 @@
-"""Tree ancestry is bounded and follows only encoded parent edges."""
-
+"""Multi-parent ancestry respects edge encoding and independent traversal limits."""
 from __future__ import annotations
 
 import unittest
-
-from core.domain.memory.tree import ancestor_ids, parent_id, tree_child_kind
+from core.domain.memory.tree import ancestor_ids, parent_ids, tree_child_kind
 
 
 class Edges:
-    def __init__(self, rows: dict[str, list[tuple[str, str, float]]]) -> None:
+    def __init__(self, rows):
         self.rows = rows
-        self.reads: list[str] = []
+        self.reads = []
 
-    def edges_of(self, node_id: str) -> list[tuple[str, str, float]]:
+    def tree_parents(self, node_id, limit):
         self.reads.append(node_id)
-        return self.rows.get(node_id, [])
+        found = {other for other, kind, _ in self.rows.get(node_id, [])
+                 if other and other != node_id and kind == tree_child_kind(other)}
+        return sorted(found)[:limit]
 
 
 class TreeDomainTest(unittest.TestCase):
-    def test_parent_uses_existing_encoded_edge_not_other_edge_kinds(self) -> None:
+    def test_multiple_parents_exclude_child_and_unrelated_edges(self):
         edges = Edges({"child": [
+            ("b", tree_child_kind("b"), 1.0),
             ("other", "causal", 1.0),
             ("own-child", tree_child_kind("child"), 1.0),
-            ("wrong", tree_child_kind("parent"), 1.0),
-            ("parent", tree_child_kind("parent"), 1.0),
-        ]})
-        self.assertEqual(parent_id("child", edges), "parent")
-        self.assertIsNone(parent_id("missing", edges))
-        self.assertIsNone(parent_id("", edges))
-        self.assertEqual(edges.reads, ["child", "missing"])
-
-    def test_ambiguous_parent_does_not_choose_an_arbitrary_branch(self) -> None:
-        edges = Edges({"child": [
+            ("wrong", tree_child_kind("a"), 1.0),
             ("a", tree_child_kind("a"), 1.0),
-            ("b", tree_child_kind("b"), 1.0),
+            ("a", tree_child_kind("a"), 1.0),
         ]})
-        self.assertIsNone(parent_id("child", edges))
-        self.assertEqual(ancestor_ids("child", edges), ())
+        self.assertEqual(parent_ids("child", edges), ("a", "b"))
+        self.assertEqual(parent_ids("child", edges, limit=1), ("a",))
+        self.assertEqual(parent_ids("", edges), ())
+        with self.assertRaises(ValueError):
+            parent_ids("child", edges, limit=0)
 
-    def test_ancestors_stop_at_missing_parent_depth_and_cycle(self) -> None:
+    def test_breadth_first_depth_visits_and_cycle(self):
         edges = Edges({
-            "leaf": [("middle", tree_child_kind("middle"), 1.0)],
-            "middle": [("root", tree_child_kind("root"), 1.0)],
+            "leaf": [("a", tree_child_kind("a"), 1.0),
+                     ("b", tree_child_kind("b"), 1.0)],
+            "a": [("root", tree_child_kind("root"), 1.0)],
+            "b": [("root", tree_child_kind("root"), 1.0)],
             "root": [("leaf", tree_child_kind("leaf"), 1.0)],
         })
-        self.assertEqual(ancestor_ids("leaf", edges), ("middle", "root"))
-        edges.reads.clear()
-        self.assertEqual(ancestor_ids("leaf", edges, max_depth=1), ("middle",))
-        self.assertEqual(edges.reads, ["leaf"])
-        self.assertEqual(ancestor_ids("unknown", edges), ())
+        self.assertEqual(ancestor_ids("leaf", edges), ("a", "b", "root"))
+        self.assertEqual(ancestor_ids("leaf", edges, max_depth=1), ("a", "b"))
+        self.assertEqual(ancestor_ids("leaf", edges, max_visits=2), ("a", "b"))
+        self.assertEqual(ancestor_ids("leaf", edges, max_parents=1), ("a", "root"))
         with self.assertRaises(ValueError):
             ancestor_ids("leaf", edges, max_depth=0)
