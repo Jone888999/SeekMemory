@@ -4,6 +4,8 @@
 
 ### 中文
 
+- 将树的唯一父节点和有界祖先查询归入 core 的只读领域规则，遇到环或多父节点歧义时停止；TreeService 保留写入协调，树边编码、已存数据和配置不变。
+
 - 将指定记忆的纯触发/给出规则从兼容写入入口分开，解除上下文记录器的内部反向依赖，保留旧导入别名和规则行为。
 
 - 完成后端及脚本英文在前的等义中文职责说明，修正命中、人格副本及秘密披露旧注释；同步最终模块能力、资源归属、恢复边界和验证入口，并说明保留较长编排文件的理由。纯注释修改校验非说明语法树一致。
@@ -49,6 +51,8 @@
 - 回归测试覆盖：At 组件识别、wake-all 不再算点名、主人开关、陪聊轮数。
 
 ### English
+
+- Move unique-parent and bounded ancestor reads into core read-only tree rules, stopping on cycles or ambiguous parents; TreeService still coordinates writes. Stored edge encoding, data, and configuration are unchanged.
 
 - Separate pure designated trigger/given predicates from the compatible recording entry, removing the context writer’s reverse implementation dependency while preserving old aliases and rule behavior.
 
@@ -120,6 +124,8 @@
 
 ### 中文
 
+- 将 core 的领域实现归入 `core/domain/`，图存储协议归入 `core/port/`；旧模块导入与 `core.ports` 保留同一对象的兼容入口。移除 `main.py` 整文件 40 行上限测试，保留入口职责边界检查。未改模型调用、持久化格式或公开配置。
+
 - 运行轨迹新增宿主无关的运行编号、结果及时间范围查询，AstrBot 与独立 HTTP 共用契约；控制台可定位已记录的失败步骤，并标明未结束或不完整时间轴。保留既有白名单、只读边界和响应格式；切换查询时丢弃迟到结果，不新增数据库或公开配置。
 
 - 修复独立控制台启动和读取时隐式裁剪历史 trace；轨迹只读筛选，不改写原文件。HTTP 连接并行读写，管理操作继续在单个 SQLite 所属线程串行执行，避免空闲连接阻塞正常请求；保持 API、配置与数据格式兼容。
@@ -181,6 +187,8 @@
 - 人格控制台接入历史版本回滚、差异比较与变化原因；安装时校验预览内容，按版本显示已安装状态；Dream 日志区分预算停止与完成，并显示调度开关。新增控制台接口需与 dashboard 同步更新，不涉及数据库迁移或配置变化（#82 / #83）。
 
 ### English
+
+- Group core domain implementations under `core/domain/` and the graph storage protocol under `core/port/`; legacy module imports and `core.ports` still resolve to the same objects. Remove the whole-file 40-line limit test for `main.py` while retaining entry-point ownership checks. Model calls, persisted formats and public configuration are unchanged.
 
 - Add host-neutral run ID, result and time-range queries with a shared contract for AstrBot and standalone HTTP. The console locates recorded failure steps and marks unfinished or partial timelines. Preserve the allowlist, read-only boundary and response format, discard late query results, and add no database or public configuration changes.
 
