@@ -4,9 +4,13 @@
 
 ### 中文
 
+- 增加 #183 有界只读树召回阶段：同主体及范围、当前版本和 Source 证据校验，异常回退原平面召回；内部开关默认关闭，未改公开配置或存储格式。
+
 - 修复用户消息跨会话复用 event_id 时被误去重的问题：RunRecorder 的已完成记录与待补偿写入统一按现有 Source ID 区分，保留同一消息重放的幂等性及对外 turn_id，无数据格式或配置变化（#187）。
 
 ### English
+
+- Add #183 bounded read-only tree recall with subject/scope, current-version and Source-evidence checks and flat-recall fallback; internal rollout is off by default, with no public configuration or storage-format changes.
 
 - Fix user messages being incorrectly deduplicated when event IDs are reused across sessions: RunRecorder keys completed and pending user writeback by the existing Source ID, preserving exact replay idempotency and public turn_id values. No data-format or configuration changes (#187).
 
