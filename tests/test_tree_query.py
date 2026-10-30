@@ -61,6 +61,62 @@ class TreeQueryTest(unittest.TestCase):
         self.edge(leaf, root)
         self.assertEqual(self.expand(root, TreeQueryLimits(depth=3, children=1)).children, 1)
 
+    def test_two_parent_paths_expand_depth_and_branch_with_hard_limits(self):
+        top = self.node("top", level="impression")
+        other = self.node("other", level="scene")
+        first = self.node("first", level="scene")
+        second = self.node("second", level="scene")
+        leaf = self.node("leaf", level="fact")
+        side = self.node("side detail", level="fact")
+        for child, parent in ((first, top), (second, top), (leaf, first),
+                              (leaf, second), (side, other), (other, top)):
+            self.edge(child, parent)
+        self.assertEqual(set(self.tree.parents(leaf.header.id)),
+                         {first.header.id, second.header.id})
+        result = self.expand(leaf, TreeQueryLimits(depth=4, total=8, visits=48))
+        self.assertIn(top.header.id, result.ids)
+        self.assertIn(first.header.id, result.ids)
+        self.assertIn(second.header.id, result.ids)
+        self.assertIn(other.header.id, result.ids)
+        self.assertIn(side.header.id, result.ids)
+        bounded = self.expand(leaf, TreeQueryLimits(depth=1, visits=3, total=2))
+        self.assertLessEqual(bounded.visits, 3)
+        self.assertLessEqual(len(bounded.ids), 2)
+        self.assertNotIn(top.header.id, bounded.ids)
+        one_hop = self.expand(leaf, TreeQueryLimits(depth=1, visits=48))
+        self.assertNotIn(top.header.id, one_hop.ids)
+        self.assertNotIn(side.header.id, one_hop.ids)
+        self.edge(top, leaf)  # Cyclic multi-parent data must still terminate.
+        self.assertLessEqual(self.expand(leaf, TreeQueryLimits(visits=5)).visits, 5)
+
+    def test_two_sources_support_one_parent_and_multiple_parent_paths(self):
+        self.db.sources.append_sources([Source("s2", "t2", self.session, "u", "user", "other", "t")])
+        anchor = self.node("anchor")
+        first = self.node("first conclusion", level="impression")
+        second = make("memory", {"text": "combined conclusion", "level": "impression"},
+                      subject_id="u", lineage=Lineage(("s1", "s2")))
+        self.db.artifacts.commit(second, expected_revision=0, op="create",
+                                 source_ids=("s1", "s2"))
+        self.cache.put(second)
+        self.nodes.append(second)
+        self.edge(anchor, first)
+        self.edge(anchor, second)
+        result = self.expand(anchor)
+        self.assertIn(first.header.id, result.ids)
+        self.assertIn(second.header.id, result.ids)
+        self.assertEqual(result.parents, 2)
+
+    def test_relevance_and_path_support_rank_without_bypassing_evidence(self):
+        anchor = self.node("anchor")
+        weak = self.node("unrelated dull", level="scene")
+        relevant = self.node("rocket rocket", level="scene")
+        self.edge(anchor, weak)
+        self.edge(anchor, relevant)
+        result = expand_tree([anchor], self.nodes, self.tree, self.db.artifacts,
+                             self.db.sources, text="rocket")
+        self.assertLess(result.ids.index(relevant.header.id), result.ids.index(weak.header.id))
+        self.assertNotIn("rocket", str(result.info()))
+
     def test_identity_evidence_and_stale_cache_rejected_without_sibling_leak(self):
         anchor = self.node("anchor")
         bad_parent = self.node("other subject", subject="v")
@@ -84,6 +140,24 @@ class TreeQueryTest(unittest.TestCase):
         self.assertEqual(result.rejected.get("evidence"), 1)
         self.assertEqual(result.rejected.get("stale"), 1)
 
+    def test_service_expands_two_parents_without_extra_writes(self):
+        left = self.node("left context", level="scene")
+        right = self.node("right context", level="impression")
+        anchor = self.node("needle anchor unique", level="fact")
+        self.tree.add_under(anchor, (left.header.id, right.header.id))
+        service = RecallService(
+            cache=self.cache, graph=self.graph, artifacts=self.db.artifacts,
+            sources=self.db.sources, budget=ContextBudget(injection_chars=600),
+            config=lambda key, default: {"source_recall_enabled": False, "recall_k": 3}.get(key, default),
+            owner_umo=lambda: self.session, tree=self.tree, tree_enabled=True,
+        )
+        with patch.object(self.db.artifacts, "commit", side_effect=AssertionError("write")):
+            _block, info = service.query("needle anchor unique", self.session, True, "u")
+        self.assertIn(left.header.id, info["picked_ids"])
+        self.assertIn(right.header.id, info["picked_ids"])
+        self.assertIn(anchor.header.id, info["picked_ids"])
+        self.assertGreaterEqual(info["tree"]["parents"], 1)
+
     def test_tree_added_cross_session_text_still_passes_disclosure(self):
         parent = self.node("parent private never quote", scope="shared", level="impression")
         anchor = self.node("needle shared query", scope="shared", level="fact")
@@ -98,6 +172,23 @@ class TreeQueryTest(unittest.TestCase):
         self.assertIn(parent.header.id, info["picked_ids"])
         self.assertNotIn("parent private never quote", block)
         self.assertNotEqual(info["disclosure"].get(parent.header.id), "full")
+
+    def test_legacy_only_parent_forces_flat_fallback_without_repair(self):
+        anchor = self.node("unique topic")
+        parent = self.node("legacy parent")
+        self.db.conn.execute("UPDATE nodes SET parent = ? WHERE id = ?",
+                             (parent.header.id, anchor.header.id))
+        service = RecallService(
+            cache=self.cache, graph=self.graph, artifacts=self.db.artifacts,
+            sources=self.db.sources, budget=ContextBudget(injection_chars=600),
+            config=lambda key, default: {"source_recall_enabled": False}.get(key, default),
+            owner_umo=lambda: self.session, tree=self.tree, tree_enabled=True,
+        )
+        with patch.object(self.db.artifacts, "add_edge", side_effect=AssertionError("repair")):
+            _block, info = service.query("unique topic", self.session, True, "u")
+        self.assertEqual(info["tree"]["status"], "fallback")
+        self.assertEqual(self.db.artifacts.legacy_tree_gap_count(), 1)
+        self.assertEqual(info["tree"]["rejected"], {"legacy_parent_only": 1})
 
     def test_service_read_only_disclosure_budget_and_failure_fallback(self):
         parent = self.node("private parent unique", level="impression")

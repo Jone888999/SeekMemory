@@ -31,7 +31,7 @@ try:  # Plugin namespace / 插件命名空间。
     from ..recall.scope import visible
     from ..recall.temporal import filter_valid, in_window, query_window
     from ..recall.score import select
-    from ..recall.tree_query import TreeLookup, TreeQueryLimits, expand_tree
+    from ..recall.tree_query import LegacyTreeGap, TreeLookup, TreeQueryLimits, expand_tree
     from ..recall.source_query import query_recent
 except ImportError:  # Top-level package / 顶层包。
     from app.ports import ArtifactCache, ArtifactStore, Retriever, SourceStore
@@ -56,7 +56,7 @@ except ImportError:  # Top-level package / 顶层包。
     from recall.scope import visible
     from recall.temporal import filter_valid, in_window, query_window
     from recall.score import select
-    from recall.tree_query import TreeLookup, TreeQueryLimits, expand_tree
+    from recall.tree_query import LegacyTreeGap, TreeLookup, TreeQueryLimits, expand_tree
     from recall.source_query import query_recent
 
 Conf = Callable[[str, Any], Any]
@@ -200,12 +200,18 @@ def query_block(
             limit = max(0, int(conf("recall_k", 8)))
             capacity = max(0, limit - len(original))
             result = expand_tree(original, pool, tree, artifacts, sources,
-                                 TreeQueryLimits(total=min(8, capacity)))
+                                 TreeQueryLimits(total=min(8, capacity)), text=text,
+                                 signals={c.artifact.header.id: (c.activation, c.lexical)
+                                          for c in candidates})
             by_id = {art.header.id: art for art in pool}
             picked = original[:limit] + [by_id[node_id] for node_id in result.ids
                                           if node_id in by_id][:capacity]
             tree_info = result.info()
             tree_info["status"] = "ok"
+        except LegacyTreeGap:
+            picked = original
+            tree_info = {"status": "fallback", "expanded": 0,
+                         "rejected": {"legacy_parent_only": 1}}
         except Exception:  # noqa: BLE001 - Optional tree failure falls back to flat recall.
             picked = original
             tree_info = {"status": "fallback", "expanded": 0, "rejected": {"tree_error": 1}}

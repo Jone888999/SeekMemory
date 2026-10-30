@@ -8,6 +8,6 @@ from typing import Protocol
 class TreeEdgeReader(Protocol):
     """Supply stored edges without exposing SQL or cache / 提供已存连接，不暴露 SQL 或缓存。"""
 
-    def edges_of(self, node_id: str) -> list[tuple[str, str, float]]:
-        """Return adjacent (other ID, kind, weight) rows / 返回邻接的（另一端编号、类型、权重）。"""
+    def tree_parents(self, node_id: str, limit: int) -> list[str]:
+        """Read a limited ordered parent ID page / 限量读取排序后的父节点编号。"""
         ...
